@@ -541,9 +541,32 @@ def _refresh_risk_scores(db: Session):
 # Startup
 # ---------------------------------------------------------------------------
 
+def _schema_is_valid() -> bool:
+    """Check if the current SQLite schema matches expected columns.
+    Detects stale databases from before the GeoAlchemy2 → lat/lng migration."""
+    try:
+        from sqlalchemy import inspect, text
+        inspector = inspect(database.engine)
+        tables = inspector.get_table_names()
+        if "vehicles" not in tables:
+            return True  # Will be freshly created by create_all
+        cols = {c["name"] for c in inspector.get_columns("vehicles")}
+        # New schema uses lat/lng; old schema had a 'location' geometry column
+        return "lat" in cols and "lng" in cols
+    except Exception:
+        return False
+
+
 @app.on_event("startup")
 def startup_event():
-    # Create all tables
+    # Detect and repair stale schema (e.g. old GeoAlchemy2 'location' column)
+    if not _schema_is_valid():
+        import logging
+        logging.warning("Schema mismatch detected (missing lat/lng columns). "
+                        "Dropping and recreating all tables with current schema.")
+        models.Base.metadata.drop_all(bind=database.engine)
+
+    # Create all tables fresh (or no-op if schema is current)
     models.Base.metadata.create_all(bind=database.engine)
 
     db = database.SessionLocal()

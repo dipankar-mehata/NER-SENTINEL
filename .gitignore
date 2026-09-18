@@ -16,6 +16,10 @@ __pycache__/
 .Python
 backend/.pytest_cache/
 *.log
+# SQLite databases — always regenerated on startup, never commit stale schemas
+*.db
+*.sqlite
+*.sqlite3
 
 # Node / Frontend
 frontend/node_modules/
