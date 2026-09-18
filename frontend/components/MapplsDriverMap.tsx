@@ -3,6 +3,19 @@ import { useEffect, useRef, useState } from 'react';
 
 type Coordinate = [number, number];
 
+export interface FuelStation {
+  id: string;
+  name: string;
+  brand: string;
+  lat: number;
+  lng: number;
+  fuels: string[];
+  is_24x7: boolean;
+  def_available: boolean;
+  contact: string;
+  distance_km?: number;
+}
+
 interface MapplsDriverMapProps {
   startLat: number;
   startLng: number;
@@ -15,6 +28,8 @@ interface MapplsDriverMapProps {
   routeARisk?: number;
   routeBRisk?: number;
   isRouteBRecommended?: boolean;
+  showFuelPumps?: boolean;
+  fuelStations?: FuelStation[];
   onFallback?: () => void;
 }
 
@@ -30,6 +45,8 @@ export default function MapplsDriverMap({
   routeARisk = 35,
   routeBRisk = 25,
   isRouteBRecommended = false,
+  showFuelPumps = false,
+  fuelStations = [],
   onFallback,
 }: MapplsDriverMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -232,6 +249,43 @@ export default function MapplsDriverMap({
         }
         overlaysRef.current.push(polyB);
       }
+
+      // Fuel Stations Layer
+      if (showFuelPumps && Array.isArray(fuelStations)) {
+        fuelStations.forEach((fs) => {
+          if (isNaN(fs.lat) || isNaN(fs.lng)) return;
+          try {
+            const fuelMarker = new mappls.Marker({
+              map: map,
+              position: { lat: fs.lat, lng: fs.lng },
+              title: `⛽ ${fs.name} (${fs.brand})`,
+            });
+            const fuelInfo = `
+              <div style="font-family:system-ui,sans-serif;padding:6px;min-width:180px;color:#111;">
+                <div style="font-weight:bold;font-size:13px;color:#c2410c;">⛽ ${fs.name}</div>
+                <div style="font-size:11px;color:#555;margin-top:2px;">${fs.brand} • ${fs.is_24x7 ? '24x7 Open' : 'Day Hours'}</div>
+                <div style="font-size:10px;margin-top:4px;color:#333;">
+                  <b>Fuels:</b> ${fs.fuels.join(', ')} ${fs.def_available ? ' | DEF / AdBlue Available' : ''}
+                </div>
+                ${fs.distance_km !== undefined ? `<div style="font-size:10px;color:#0284c7;margin-top:2px;font-weight:bold;">${fs.distance_km} km away</div>` : ''}
+                ${fs.contact ? `<div style="font-size:10px;color:#666;margin-top:2px;">📞 ${fs.contact}</div>` : ''}
+              </div>
+            `;
+            if (typeof fuelMarker.addListener === 'function') {
+              fuelMarker.addListener('click', () => {
+                new mappls.InfoWindow({
+                  map: map,
+                  content: fuelInfo,
+                  position: { lat: fs.lat, lng: fs.lng },
+                });
+              });
+            }
+            overlaysRef.current.push(fuelMarker);
+          } catch (err) {
+            console.warn('Error adding Mappls fuel marker:', err);
+          }
+        });
+      }
     } catch (e) {
       console.warn('Error adding driver overlays:', e);
     }
@@ -248,6 +302,8 @@ export default function MapplsDriverMap({
     routeARisk,
     routeBRisk,
     isRouteBRecommended,
+    showFuelPumps,
+    fuelStations,
   ]);
 
   if (initError) {

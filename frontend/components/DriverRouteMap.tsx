@@ -29,6 +29,14 @@ const endIcon = L.divIcon({
   className: '',
 });
 
+const fuelIcon = L.divIcon({
+  html: `<div style="background:#ea580c;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:16px;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.5)">⛽</div>`,
+  iconSize: [30, 30],
+  iconAnchor: [15, 15],
+  popupAnchor: [0, -16],
+  className: '',
+});
+
 type Coordinate = [number, number];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -47,6 +55,19 @@ interface RouteData {
   label?: string;
 }
 
+export interface FuelStation {
+  id: string;
+  name: string;
+  brand: string;
+  lat: number;
+  lng: number;
+  fuels: string[];
+  is_24x7: boolean;
+  def_available: boolean;
+  contact: string;
+  distance_km?: number;
+}
+
 interface DriverRouteMapProps {
   startLat: number;
   startLng: number;
@@ -57,6 +78,10 @@ interface DriverRouteMapProps {
   startLabel: string;
   endLabel: string;
   isRouteBRecommended?: boolean;
+  showFuelPumps?: boolean;
+  fuelStations?: FuelStation[];
+  isOfflineMode?: boolean;
+  onToggleFuelPumps?: () => void;
 }
 
 function parsePoint(pt: unknown): Coordinate | null {
@@ -129,6 +154,10 @@ export default function DriverRouteMap({
   startLabel,
   endLabel,
   isRouteBRecommended = false,
+  showFuelPumps = false,
+  fuelStations = [],
+  isOfflineMode = false,
+  onToggleFuelPumps,
 }: DriverRouteMapProps) {
   if (typeof window === 'undefined') return null;
 
@@ -179,8 +208,9 @@ export default function DriverRouteMap({
         position: 'relative',
       }}
     >
-      {/* Provider Switcher */}
-      <div className="absolute top-2 left-2 z-[1000] flex items-center gap-2 bg-gray-900/95 backdrop-blur border border-gray-700 p-1 rounded-lg text-xs shadow-lg">
+      {/* Top Map Control Bar */}
+      <div className="absolute top-2 left-2 z-[1000] flex flex-wrap items-center gap-2 bg-gray-900/95 backdrop-blur border border-gray-700 p-1 rounded-lg text-xs shadow-lg">
+        {/* Provider Switcher */}
         <button
           onClick={() => setMapProvider('mappls')}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-semibold transition-all ${
@@ -204,7 +234,36 @@ export default function DriverRouteMap({
           <span>🌐</span>
           <span>OpenStreetMap</span>
         </button>
+
+        <div className="w-px h-4 bg-gray-700 mx-0.5" />
+
+        {/* Petrol Pumps Toggle */}
+        <button
+          onClick={onToggleFuelPumps}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-semibold transition-all ${
+            showFuelPumps
+              ? 'bg-amber-600 text-white shadow-md'
+              : 'text-gray-400 hover:text-white hover:bg-gray-800'
+          }`}
+          title="Toggle nearby highway petrol pumps"
+        >
+          <span>⛽</span>
+          <span>Petrol Pumps</span>
+          <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+            showFuelPumps ? 'bg-amber-900 text-amber-100' : 'bg-gray-800 text-gray-400'
+          }`}>
+            {showFuelPumps ? 'ON' : 'OFF'}
+          </span>
+        </button>
       </div>
+
+      {/* Offline Mode Indicator */}
+      {isOfflineMode && (
+        <div className="absolute top-2 right-2 z-[1000] flex items-center gap-1.5 bg-yellow-950/95 border border-yellow-500 px-3 py-1.5 rounded-lg text-xs font-semibold text-yellow-300 shadow-xl backdrop-blur">
+          <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+          <span>📴 Offline Navigation Active (Cached Vectors)</span>
+        </div>
+      )}
 
       {mapProvider === 'mappls' ? (
         <MapplsDriverMap
@@ -219,6 +278,8 @@ export default function DriverRouteMap({
           routeARisk={routeA?.total_risk}
           routeBRisk={routeB?.total_risk}
           isRouteBRecommended={isRouteBRecommended}
+          showFuelPumps={showFuelPumps}
+          fuelStations={fuelStations}
           onFallback={() => setMapProvider('osm')}
         />
       ) : (
@@ -307,6 +368,46 @@ export default function DriverRouteMap({
             </div>
           </Popup>
         </Marker>
+
+        {/* Fuel Stations Layer */}
+        {showFuelPumps && Array.isArray(fuelStations) && fuelStations.map((fs) => (
+          <Marker
+            key={fs.id}
+            position={[fs.lat, fs.lng]}
+            icon={fuelIcon}
+          >
+            <Popup>
+              <div className="text-xs text-gray-900 p-1 min-w-[190px]">
+                <div className="font-bold text-orange-700 flex items-center gap-1.5 text-sm">
+                  <span>⛽</span>
+                  <span>{fs.name}</span>
+                </div>
+                <div className="text-[11px] text-gray-600 font-medium mt-0.5">{fs.brand}</div>
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {fs.fuels.map((f) => (
+                    <span key={f} className="bg-gray-100 border border-gray-300 text-gray-800 px-1.5 py-0.5 rounded text-[10px] font-semibold">
+                      {f}
+                    </span>
+                  ))}
+                  {fs.def_available && (
+                    <span className="bg-blue-100 border border-blue-300 text-blue-800 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                      DEF / AdBlue
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-gray-600 mt-2 flex items-center justify-between border-t pt-1 border-gray-200">
+                  <span>{fs.is_24x7 ? '🟢 24x7 Open' : '🟡 Limited Hours'}</span>
+                  {fs.distance_km !== undefined && (
+                    <span className="font-bold text-gray-800">{fs.distance_km} km away</span>
+                  )}
+                </div>
+                {fs.contact && (
+                  <div className="text-[10px] text-blue-600 mt-1 font-mono">📞 {fs.contact}</div>
+                )}
+              </div>
+            </Popup>
+          </Marker>
+        ))}
       </MapContainer>
       )}
     </div>

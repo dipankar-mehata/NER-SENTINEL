@@ -133,3 +133,37 @@ class WhatIfRequest(BaseModel):
 class ChatRequest(BaseModel):
     """Query to the AI logistics copilot."""
     query: str = Field(..., min_length=1, description="Natural-language query")
+
+
+# ---------------------------------------------------------------------------
+# SOS & Emergency schemas
+# ---------------------------------------------------------------------------
+
+class SOSBroadcastRequest(BaseModel):
+    """Payload when a driver hits Emergency SOS to alert nearby vehicles and report disaster."""
+    driver_name: str = Field(default="Driver", description="Driver reporting the emergency")
+    vehicle_id: Optional[int] = Field(default=None, description="Vehicle ID if assigned")
+    lat: float = Field(..., description="Current latitude of the vehicle")
+    lng: float = Field(..., description="Current longitude of the vehicle")
+    disaster_type: str = Field(
+        default="LANDSLIDE",
+        description="LANDSLIDE / FLASH_FLOOD / ROAD_COLLAPSE / VEHICLE_STRANDED / MEDICAL / SEVERE_STORM",
+    )
+    severity: Union[int, str] = Field(default="HIGH", description="Severity 1-5 or HIGH / CRITICAL")
+    description: str = Field(default="", description="Emergency description / voice note transcript")
+    radius_km: float = Field(default=50.0, description="Broadcast radius in kilometers")
+
+
+class FuelStationResponse(BaseModel):
+    """Fuel station information along highway corridors."""
+    id: str
+    name: str
+    brand: str
+    lat: float
+    lng: float
+    fuels: list[str]
+    is_24x7: bool
+    def_available: bool
+    contact: str
+    distance_km: Optional[float] = None
+
