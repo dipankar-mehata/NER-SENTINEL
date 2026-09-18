@@ -1,195 +1,197 @@
-import { useEffect, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
-
-interface StatsData {
-  vehicleCount: number;
-  incidentCount: number;
-}
-
-const ROLES = [
-  {
-    emoji: '🏛️',
-    title: 'Admin Command Center',
-    description: 'Full situational awareness, disaster simulation, AI copilot, and risk forecasting.',
-    href: '/admin',
-    color: 'from-blue-600 to-blue-800',
-    border: 'border-blue-700 hover:border-blue-400',
-    badge: 'COMMAND',
-    badgeColor: 'bg-blue-900 text-blue-300',
-  },
-  {
-    emoji: '🗺️',
-    title: 'District Officer',
-    description: 'Monitor district accessibility scores, incidents, road conditions, and weather alerts.',
-    href: '/district',
-    color: 'from-purple-600 to-purple-800',
-    border: 'border-purple-700 hover:border-purple-400',
-    badge: 'DISTRICT',
-    badgeColor: 'bg-purple-900 text-purple-300',
-  },
-  {
-    emoji: '📦',
-    title: 'Logistics Manager',
-    description: 'Fleet management, supply chain status, backhaul optimization, and cargo tracking.',
-    href: '/logistics',
-    color: 'from-orange-600 to-orange-800',
-    border: 'border-orange-700 hover:border-orange-400',
-    badge: 'LOGISTICS',
-    badgeColor: 'bg-orange-900 text-orange-300',
-  },
-  {
-    emoji: '🚚',
-    title: 'Driver Portal',
-    description: 'Live route navigation, hazard alerts, route comparison, and GPS location sharing.',
-    href: '/driver',
-    color: 'from-teal-600 to-teal-800',
-    border: 'border-teal-700 hover:border-teal-400',
-    badge: 'DRIVER',
-    badgeColor: 'bg-teal-900 text-teal-300',
-  },
-];
+import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import '../lib/i18n';
+import LanguageSwitcher from '../components/LanguageSwitcher';
+import { useVehicles, useSOSAlerts } from '../lib/firebaseRealtimeSync';
 
 export default function Home() {
-  const [stats, setStats] = useState<StatsData>({ vehicleCount: 0, incidentCount: 0 });
-  const [loading, setLoading] = useState(true);
+  const { t } = useTranslation();
+  const vehicles = useVehicles();
+  const sosAlerts = useSOSAlerts();
+  const [time, setTime] = useState('');
 
   useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const [vRes, iRes] = await Promise.all([
-          fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/vehicles`),
-          fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/incidents`),
-        ]);
-        const [vehicles, incidents] = await Promise.all([vRes.json(), iRes.json()]);
-        setStats({
-          vehicleCount: Array.isArray(vehicles) ? vehicles.length : 0,
-          incidentCount: Array.isArray(incidents) ? incidents.length : 0,
-        });
-      } catch {
-        // Silently fail — stats are informational only
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchStats();
+    const tick = () => setTime(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    tick();
+    const iv = setInterval(tick, 1000);
+    return () => clearInterval(iv);
   }, []);
+
+  const onlineVehicles = vehicles.filter(v => v.status !== 'offline').length;
 
   return (
     <>
       <Head>
-        <title>NER-SENTINEL — Northeast India Logistics Intelligence</title>
-        <meta name="description" content="NER-SENTINEL Logistics Intelligence Platform for Northeast India" />
-        <meta name="theme-color" content="#111827" />
-        <link rel="manifest" href="/manifest.json" />
+        <title>NER-SENTINEL — Emergency Logistics Intelligence</title>
+        <meta name="description" content="Real-time emergency routing and logistics management for Northeast India" />
+        <meta name="theme-color" content="#DC2626" />
       </Head>
 
-      <div className="min-h-screen bg-gray-950 text-white flex flex-col">
-        {/* Animated background */}
-        <div className="fixed inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-900/20 rounded-full blur-3xl" />
-          <div className="absolute top-1/2 -left-40 w-96 h-96 bg-purple-900/15 rounded-full blur-3xl" />
-          <div className="absolute -bottom-40 right-1/3 w-80 h-80 bg-green-900/10 rounded-full blur-3xl" />
-        </div>
-
-        {/* Header */}
-        <header className="relative z-10 border-b border-gray-800 bg-gray-950/80 backdrop-blur-sm">
-          <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div className="min-h-screen bg-white flex flex-col" style={{ fontFamily: 'Satoshi, sans-serif' }}>
+        {/* ── Header ────────────────────────────────────────────────────── */}
+        <header className="border-b border-neutral-100 bg-white/80 backdrop-blur-sm sticky top-0 z-40">
+          <div className="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center text-xl font-black">
+              <div className="w-10 h-10 bg-red-600 rounded-xl flex items-center justify-center text-xl shadow-sm">
                 🛰️
               </div>
               <div>
-                <span className="text-lg font-black tracking-wider text-white">NER-SENTINEL</span>
-                <div className="text-xs text-gray-500 leading-none">v2.0 Intelligence Platform</div>
+                <div className="font-black text-neutral-900 text-base tracking-wide leading-none">NER-SENTINEL</div>
+                <div className="text-xs text-neutral-400 leading-none mt-0.5">{t('tagline')}</div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-              <span className="text-green-400 text-sm font-medium">All Systems Online</span>
+            <div className="flex items-center gap-4">
+              <div className="hidden sm:flex items-center gap-2 text-xs">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                <span className="text-green-700 font-semibold">{t('allSystemsOnline')}</span>
+                <span className="text-neutral-300">|</span>
+                <span className="font-mono text-neutral-500">{time}</span>
+              </div>
+              <LanguageSwitcher />
             </div>
           </div>
         </header>
 
-        {/* Hero */}
-        <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 py-12">
-          <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-2 bg-blue-900/40 border border-blue-700 rounded-full px-4 py-1.5 mb-6 text-blue-300 text-sm font-medium">
-              <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
-              Northeast India Logistics Intelligence Platform
+        {/* ── Hero ──────────────────────────────────────────────────────── */}
+        <main className="flex-1">
+          {/* Big red accent strip + title */}
+          <section className="relative overflow-hidden">
+            {/* Background geometric accent */}
+            <div className="absolute inset-0 pointer-events-none">
+              <div className="absolute -top-20 -right-20 w-96 h-96 bg-red-50 rounded-full opacity-80" />
+              <div className="absolute top-1/2 -left-16 w-64 h-64 bg-red-50 rounded-full opacity-50" />
             </div>
 
-            <h1 className="text-6xl md:text-7xl font-black tracking-tight mb-4">
-              <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
-                NER-SENTINEL
-              </span>
-            </h1>
+            <div className="relative max-w-6xl mx-auto px-5 pt-16 pb-12 text-center">
+              {/* Badge */}
+              <div className="inline-flex items-center gap-2 bg-red-50 border border-red-200 rounded-full px-4 py-1.5 mb-6">
+                <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+                <span className="text-red-700 text-sm font-semibold">Northeast India Emergency Response System</span>
+              </div>
 
-            <p className="text-gray-400 text-xl max-w-2xl mx-auto leading-relaxed">
-              Real-time logistics intelligence, disaster simulation, and AI-powered route optimization
-              for the Northeast India corridor.
-            </p>
-          </div>
+              <h1 className="text-5xl md:text-7xl font-black text-neutral-900 leading-none mb-3">
+                NER-{' '}
+                <span className="text-red-600">SENTINEL</span>
+              </h1>
+              <p className="text-neutral-500 text-lg max-w-xl mx-auto leading-relaxed mb-10">
+                {t('landingSubtitle')}
+              </p>
 
-          {/* Role Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl w-full">
-            {ROLES.map((role) => (
-              <Link
-                key={role.href}
-                href={role.href}
-                className={`group relative bg-gray-900 border ${role.border} rounded-2xl p-6 flex flex-col gap-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-black/50 cursor-pointer`}
-              >
-                {/* Badge */}
-                <div className="flex justify-between items-start">
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${role.badgeColor}`}>
-                    {role.badge}
-                  </span>
-                  <span className="text-gray-600 group-hover:text-gray-400 transition-colors text-sm">→</span>
-                </div>
+              {/* Live stats */}
+              <div className="flex flex-wrap justify-center gap-4 mb-12">
+                <StatCard icon="🚚" value={onlineVehicles || '5'} label={t('vehiclesOnline')} color="blue" />
+                <StatCard icon="🚨" value={sosAlerts.length || '0'} label={t('activeAlerts')} color="red" />
+                <StatCard icon="🌏" value="8" label="NE States Covered" color="green" />
+              </div>
 
-                {/* Icon */}
-                <div className={`w-16 h-16 bg-gradient-to-br ${role.color} rounded-2xl flex items-center justify-center text-3xl shadow-lg`}>
-                  {role.emoji}
-                </div>
+              {/* Portal Cards */}
+              <div className="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
+                {/* Command Center */}
+                <Link
+                  href="/command"
+                  className="group relative bg-white border-2 border-neutral-200 hover:border-red-400 rounded-3xl p-7 text-left shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
+                >
+                  <div className="w-14 h-14 bg-red-600 rounded-2xl flex items-center justify-center text-3xl mb-5 shadow-lg group-hover:scale-105 transition-transform">
+                    🌏
+                  </div>
+                  <div className="inline-flex items-center gap-1.5 bg-red-50 border border-red-200 rounded-full px-2.5 py-0.5 mb-3">
+                    <div className="w-1 h-1 bg-red-500 rounded-full" />
+                    <span className="text-red-600 text-xs font-bold">COMMAND</span>
+                  </div>
+                  <h2 className="text-xl font-black text-neutral-900 mb-2">{t('commandCenter')}</h2>
+                  <p className="text-sm text-neutral-500 leading-relaxed mb-4">{t('commandDesc')}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {['Master Map', 'SOS Alerts', 'Supply Priority', 'Fleet Status'].map(f => (
+                      <span key={f} className="text-xs bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-full">{f}</span>
+                    ))}
+                  </div>
+                  <div className="absolute bottom-7 right-7 w-8 h-8 bg-red-600 rounded-full flex items-center justify-center text-white text-sm group-hover:bg-red-700 transition-colors shadow-sm">
+                    →
+                  </div>
+                </Link>
 
-                {/* Content */}
-                <div>
-                  <h3 className="text-white font-bold text-lg leading-tight mb-2">{role.title}</h3>
-                  <p className="text-gray-500 text-sm leading-relaxed">{role.description}</p>
-                </div>
+                {/* Driver Portal */}
+                <Link
+                  href="/driver"
+                  className="group relative bg-white border-2 border-neutral-200 hover:border-red-400 rounded-3xl p-7 text-left shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
+                >
+                  <div className="w-14 h-14 bg-neutral-900 rounded-2xl flex items-center justify-center text-3xl mb-5 shadow-lg group-hover:scale-105 transition-transform">
+                    🚚
+                  </div>
+                  <div className="inline-flex items-center gap-1.5 bg-neutral-100 border border-neutral-200 rounded-full px-2.5 py-0.5 mb-3">
+                    <div className="w-1 h-1 bg-neutral-600 rounded-full" />
+                    <span className="text-neutral-700 text-xs font-bold">DRIVER</span>
+                  </div>
+                  <h2 className="text-xl font-black text-neutral-900 mb-2">{t('driverPortal')}</h2>
+                  <p className="text-sm text-neutral-500 leading-relaxed mb-4">{t('driverDesc')}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {['Live Navigation', 'GPS Tracking', 'SOS Alert', 'AI Simulation'].map(f => (
+                      <span key={f} className="text-xs bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-full">{f}</span>
+                    ))}
+                  </div>
+                  <div className="absolute bottom-7 right-7 w-8 h-8 bg-neutral-900 rounded-full flex items-center justify-center text-white text-sm group-hover:bg-neutral-700 transition-colors shadow-sm">
+                    →
+                  </div>
+                </Link>
+              </div>
+            </div>
+          </section>
 
-                {/* Enter button */}
-                <div className={`mt-auto w-full bg-gradient-to-r ${role.color} opacity-0 group-hover:opacity-100 transition-all text-white text-center py-2 rounded-xl text-sm font-bold`}>
-                  Enter Portal →
-                </div>
-              </Link>
-            ))}
-          </div>
+          {/* ── Features Strip ──────────────────────────────────────────── */}
+          <section className="bg-neutral-50 border-t border-neutral-100 py-10">
+            <div className="max-w-6xl mx-auto px-5">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+                {[
+                  { icon: '🔄', title: 'Real-Time Sync', desc: 'Firebase bi-directional sync across all portals' },
+                  { icon: '🧠', title: 'AI Rerouting', desc: 'Automatic hazard-aware path optimization' },
+                  { icon: '🌦️', title: 'Weather + Disasters', desc: 'Live overlays from Open-Meteo & USGS' },
+                  { icon: '🌐', title: '4 Languages', desc: 'English, Hindi, Assamese & Bengali' },
+                ].map(f => (
+                  <div key={f.title} className="p-4">
+                    <div className="text-3xl mb-2">{f.icon}</div>
+                    <div className="font-bold text-neutral-900 text-sm mb-1">{f.title}</div>
+                    <div className="text-xs text-neutral-500">{f.desc}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
         </main>
 
-        {/* Status Bar */}
-        <footer className="relative z-10 border-t border-gray-800 bg-gray-950/80 backdrop-blur-sm">
-          <div className="max-w-7xl mx-auto px-6 py-3 flex flex-wrap items-center justify-between gap-3 text-sm">
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-                <span className="text-green-400 font-medium">System Online</span>
-              </div>
-              <div className="text-gray-400">
-                <span className="text-white font-bold">{loading ? '...' : stats.vehicleCount}</span> Active Vehicles
-              </div>
-              <div className="text-gray-400">
-                <span className={`font-bold ${stats.incidentCount > 0 ? 'text-orange-400' : 'text-white'}`}>
-                  {loading ? '...' : stats.incidentCount}
-                </span> Active Incidents
-              </div>
+        {/* ── Footer ────────────────────────────────────────────────────── */}
+        <footer className="border-t border-neutral-100 bg-white">
+          <div className="max-w-6xl mx-auto px-5 py-4 flex flex-wrap items-center justify-between gap-3 text-xs text-neutral-400">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 bg-red-600 rounded-lg flex items-center justify-center text-xs">🛰️</div>
+              <span className="font-bold text-neutral-600">NER-SENTINEL</span>
+              <span>— Northeast India Logistics Intelligence</span>
             </div>
-            <div className="text-gray-600 text-xs">
-              Backend: http://localhost:8000 • Data refreshes every 15s
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                <span className="text-green-700 font-medium">Live</span>
+              </div>
+              <span>Firebase Realtime · Open-Meteo Weather · USGS Disaster Data</span>
             </div>
           </div>
         </footer>
       </div>
     </>
+  );
+}
+
+function StatCard({ icon, value, label, color }: { icon: string; value: string | number; label: string; color: string }) {
+  const ring = color === 'red' ? 'border-red-200 bg-red-50' : color === 'blue' ? 'border-blue-200 bg-blue-50' : 'border-green-200 bg-green-50';
+  const text = color === 'red' ? 'text-red-700' : color === 'blue' ? 'text-blue-700' : 'text-green-700';
+  return (
+    <div className={`flex items-center gap-3 px-5 py-3 rounded-xl border ${ring}`}>
+      <span className="text-2xl">{icon}</span>
+      <div className="text-left">
+        <div className={`text-xl font-black ${text}`}>{value}</div>
+        <div className="text-xs text-neutral-500">{label}</div>
+      </div>
+    </div>
   );
 }

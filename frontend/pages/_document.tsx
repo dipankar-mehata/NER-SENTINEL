@@ -7,22 +7,30 @@ export default function Document() {
         {/* PWA Manifest */}
         <link rel="manifest" href="/manifest.json" />
 
-        {/* Theme color */}
-        <meta name="theme-color" content="#111827" />
-        <meta name="background-color" content="#111827" />
+        {/* Theme — brand red */}
+        <meta name="theme-color" content="#DC2626" />
+        <meta name="background-color" content="#FFFFFF" />
 
-        {/* PWA iOS meta tags */}
+        {/* PWA iOS */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="NER Field" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="NER-SENTINEL" />
 
         {/* Favicon */}
         <link rel="icon" href="/favicon.ico" />
 
-        {/* Preconnect for Leaflet tiles */}
+        {/* Satoshi font — Fontshare CDN */}
+        <link rel="preconnect" href="https://api.fontshare.com" />
+        <link
+          rel="stylesheet"
+          href="https://api.fontshare.com/v2/css?f[]=satoshi@900,700,500,400&display=swap"
+        />
+
+        {/* Preconnect for map tiles */}
         <link rel="preconnect" href="https://a.tile.openstreetmap.org" />
         <link rel="preconnect" href="https://b.tile.openstreetmap.org" />
         <link rel="preconnect" href="https://c.tile.openstreetmap.org" />
+        <link rel="preconnect" href="https://a.tile.opentopomap.org" />
 
         {/* Leaflet CSS */}
         <link
@@ -32,26 +40,22 @@ export default function Document() {
           crossOrigin=""
         />
 
-        {/* Mappls Web Map SDK */}
+        {/* Mappls SDK (optional, if key present) */}
         {process.env.NEXT_PUBLIC_MAPPLS_KEY && (
           <script
             src={`https://sdk.mappls.com/map/sdk/web?v=3.0&access_token=${process.env.NEXT_PUBLIC_MAPPLS_KEY}`}
           />
         )}
 
-        {/* Service Worker Registration */}
+        {/* Service Worker */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function() {
                   navigator.serviceWorker.register('/sw.js')
-                    .then(function(reg) {
-                      console.log('[NER-SENTINEL] Service Worker registered:', reg.scope);
-                    })
-                    .catch(function(err) {
-                      console.warn('[NER-SENTINEL] Service Worker registration failed:', err);
-                    });
+                    .then(reg => console.log('[NER-SENTINEL] SW registered:', reg.scope))
+                    .catch(err => console.warn('[NER-SENTINEL] SW failed:', err));
                 });
               }
             `,
