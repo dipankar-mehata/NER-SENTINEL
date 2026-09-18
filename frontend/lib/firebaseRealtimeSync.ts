@@ -6,6 +6,19 @@ import {
 import { useEffect, useState } from 'react';
 import { db } from './firebase';
 
+// ── Retry helper ─────────────────────────────────────────────────
+async function withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 500): Promise<T> {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === retries - 1) throw err;
+      await new Promise(r => setTimeout(r, delayMs * Math.pow(2, attempt)));
+    }
+  }
+  throw new Error('Max retries exceeded');
+}
+
 // ── Types ─────────────────────────────────────────────────────────
 export interface FirebaseVehicle {
   id: string;
@@ -15,6 +28,7 @@ export interface FirebaseVehicle {
   lng: number;
   speed: number;
   heading: number;
+  accuracy?: number;
   destinationName: string;
   destinationLat: number;
   destinationLng: number;
@@ -68,7 +82,7 @@ export interface RerouteEvent {
 }
 
 // ── Firebase is available only when a project is configured ───────
-const isFirebaseConfigured = () =>
+export const isFirebaseConfigured = () =>
   typeof process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID === 'string' &&
   process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID !== '' &&
   process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID !== 'your-project-id';
@@ -79,11 +93,13 @@ export function useVehicles(): FirebaseVehicle[] {
 
   useEffect(() => {
     if (!isFirebaseConfigured()) return;
-    const unsub = onSnapshot(collection(db, 'vehicles'), (snap) => {
-      setVehicles(
-        snap.docs.map((d) => ({ id: d.id, ...d.data() } as FirebaseVehicle))
-      );
-    });
+    const unsub = onSnapshot(
+      collection(db, 'vehicles'),
+      (snap) => {
+        setVehicles(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FirebaseVehicle)));
+      },
+      (err) => console.error('[Firebase] vehicles snapshot error:', err)
+    );
     return unsub;
   }, []);
 
@@ -101,11 +117,13 @@ export function useSOSAlerts(): SOSAlert[] {
       orderBy('createdAt', 'desc'),
       limit(50)
     );
-    const unsub = onSnapshot(q, (snap) => {
-      setAlerts(
-        snap.docs.map((d) => ({ id: d.id, ...d.data() } as SOSAlert))
-      );
-    });
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setAlerts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as SOSAlert)));
+      },
+      (err) => console.error('[Firebase] sos_alerts error:', err)
+    );
     return unsub;
   }, []);
 
@@ -117,11 +135,13 @@ export function useSupplyItems(): SupplyItem[] {
 
   useEffect(() => {
     if (!isFirebaseConfigured()) return;
-    const unsub = onSnapshot(collection(db, 'supply_items'), (snap) => {
-      setItems(
-        snap.docs.map((d) => ({ id: d.id, ...d.data() } as SupplyItem))
-      );
-    });
+    const unsub = onSnapshot(
+      collection(db, 'supply_items'),
+      (snap) => {
+        setItems(snap.docs.map((d) => ({ id: d.id, ...d.data() } as SupplyItem)));
+      },
+      (err) => console.error('[Firebase] supply_items error:', err)
+    );
     return unsub;
   }, []);
 
@@ -169,6 +189,25 @@ export function useRerouteEvents(vehicleId: string | null): RerouteEvent[] {
   return events;
 }
 
+// ── Hook: Real-time single driver stream ─────────────────────────
+export function useDriverStream(vehicleId: string | null): FirebaseVehicle | null {
+  const [vehicle, setVehicle] = useState<FirebaseVehicle | null>(null);
+
+  useEffect(() => {
+    if (!vehicleId || !isFirebaseConfigured()) return;
+    const unsub = onSnapshot(
+      doc(db, 'vehicles', vehicleId),
+      (snap) => {
+        if (snap.exists()) setVehicle({ id: snap.id, ...snap.data() } as FirebaseVehicle);
+      },
+      (err) => console.error('[Firebase] driver stream error:', err)
+    );
+    return unsub;
+  }, [vehicleId]);
+
+  return vehicle;
+}
+
 // ── Write Helpers ─────────────────────────────────────────────────
 export async function publishVehicleLocation(
   vehicleId: string,
@@ -179,11 +218,36 @@ export async function publishVehicleLocation(
   extraData?: Partial<FirebaseVehicle>
 ) {
   if (!isFirebaseConfigured()) return;
-  await setDoc(
-    doc(db, 'vehicles', vehicleId),
-    { lat, lng, heading, speed, status: 'en-route', updatedAt: serverTimestamp(), ...extraData },
-    { merge: true }
-  );
+  try {
+    await withRetry(() =>
+      setDoc(
+        doc(db, 'vehicles', vehicleId),
+        { lat, lng, heading, speed, status: 'en-route', updatedAt: serverTimestamp(), ...extraData },
+        { merge: true }
+      )
+    );
+  } catch (err) {
+    console.error('[Firebase] publishVehicleLocation failed:', err);
+  }
+}
+
+export async function setDriverStatus(
+  vehicleId: string,
+  status: 'online' | 'offline' | 'en-route' | 'stopped',
+  extraData?: Partial<FirebaseVehicle>
+) {
+  if (!isFirebaseConfigured()) return;
+  try {
+    await withRetry(() =>
+      setDoc(
+        doc(db, 'vehicles', vehicleId),
+        { status, updatedAt: serverTimestamp(), ...extraData },
+        { merge: true }
+      )
+    );
+  } catch (err) {
+    console.error('[Firebase] setDriverStatus failed:', err);
+  }
 }
 
 export async function triggerSOS(
@@ -194,21 +258,25 @@ export async function triggerSOS(
   message: string
 ) {
   if (!isFirebaseConfigured()) return;
-  await addDoc(collection(db, 'sos_alerts'), {
-    vehicleId,
-    driverName,
-    lat,
-    lng,
-    message,
-    severity: 'CRITICAL',
-    resolved: false,
-    createdAt: serverTimestamp(),
-  });
+  try {
+    await withRetry(() =>
+      addDoc(collection(db, 'sos_alerts'), {
+        vehicleId, driverName, lat, lng, message,
+        severity: 'CRITICAL', resolved: false, createdAt: serverTimestamp(),
+      })
+    );
+  } catch (err) {
+    console.error('[Firebase] triggerSOS failed:', err);
+  }
 }
 
 export async function resolveSOSAlert(alertId: string) {
   if (!isFirebaseConfigured()) return;
-  await updateDoc(doc(db, 'sos_alerts', alertId), { resolved: true });
+  try {
+    await withRetry(() => updateDoc(doc(db, 'sos_alerts', alertId), { resolved: true }));
+  } catch (err) {
+    console.error('[Firebase] resolveSOSAlert failed:', err);
+  }
 }
 
 export async function updateSupplyPriority(
@@ -216,10 +284,13 @@ export async function updateSupplyPriority(
   priority: 'HIGH' | 'MODERATE' | 'LOW'
 ) {
   if (!isFirebaseConfigured()) return;
-  await updateDoc(doc(db, 'supply_items', itemId), {
-    priority,
-    updatedAt: serverTimestamp(),
-  });
+  try {
+    await withRetry(() =>
+      updateDoc(doc(db, 'supply_items', itemId), { priority, updatedAt: serverTimestamp() })
+    );
+  } catch (err) {
+    console.error('[Firebase] updateSupplyPriority failed:', err);
+  }
 }
 
 export async function pushRerouteEvent(
@@ -229,19 +300,25 @@ export async function pushRerouteEvent(
   newRouteSummary: string
 ) {
   if (!isFirebaseConfigured()) return;
-  await addDoc(collection(db, 'reroute_events'), {
-    vehicleId,
-    reason,
-    oldRouteSummary,
-    newRouteSummary,
-    acknowledged: false,
-    triggeredAt: serverTimestamp(),
-  });
+  try {
+    await withRetry(() =>
+      addDoc(collection(db, 'reroute_events'), {
+        vehicleId, reason, oldRouteSummary, newRouteSummary,
+        acknowledged: false, triggeredAt: serverTimestamp(),
+      })
+    );
+  } catch (err) {
+    console.error('[Firebase] pushRerouteEvent failed:', err);
+  }
 }
 
 export async function acknowledgeReroute(eventId: string) {
   if (!isFirebaseConfigured()) return;
-  await updateDoc(doc(db, 'reroute_events', eventId), { acknowledged: true });
+  try {
+    await withRetry(() => updateDoc(doc(db, 'reroute_events', eventId), { acknowledged: true }));
+  } catch (err) {
+    console.error('[Firebase] acknowledgeReroute failed:', err);
+  }
 }
 
 export async function setActiveRoute(
@@ -252,11 +329,14 @@ export async function setActiveRoute(
   rerouteFlag = false
 ) {
   if (!isFirebaseConfigured()) return;
-  await setDoc(doc(db, 'active_routes', vehicleId), {
-    segments,
-    totalRiskScore,
-    estimatedTimeMin,
-    rerouteFlag,
-    updatedAt: serverTimestamp(),
-  });
+  try {
+    await withRetry(() =>
+      setDoc(doc(db, 'active_routes', vehicleId), {
+        segments, totalRiskScore, estimatedTimeMin, rerouteFlag,
+        updatedAt: serverTimestamp(),
+      })
+    );
+  } catch (err) {
+    console.error('[Firebase] setActiveRoute failed:', err);
+  }
 }

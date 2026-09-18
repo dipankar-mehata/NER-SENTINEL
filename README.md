@@ -3,10 +3,10 @@
 > **Real-Time Emergency Logistics & Intelligent Routing Platform**  
 > *Built for Northeast India's complex terrain and disaster-prone environment.*
 
-[![Next.js](https://img.shields.io/badge/Frontend-Next.js%2016-black?logo=next.js)](https://nextjs.org/)
-[![React](https://img.shields.io/badge/UI-React%2019-61DAFB?logo=react)](https://react.dev/)
+[![Next.js](https://img.shields.io/badge/Frontend-Next.js%2014-black?logo=next.js)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/UI-React%2018-61DAFB?logo=react)](https://react.dev/)
 [![Firebase](https://img.shields.io/badge/Backend-Firebase-FFCA28?logo=firebase)](https://firebase.google.com/)
-[![Tailwind](https://img.shields.io/badge/Styling-Tailwind%204-38B2AC?logo=tailwind-css)](https://tailwindcss.com/)
+[![Tailwind](https://img.shields.io/badge/Styling-Tailwind%20CSS-38B2AC?logo=tailwind-css)](https://tailwindcss.com/)
 [![FastAPI](https://img.shields.io/badge/Routing-Python%20FastAPI-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
 
 ---
@@ -114,23 +114,62 @@ uvicorn main:app --reload
 
 ---
 
-## 🌐 Deployment to Production
+## 🌐 Deployment Guide (Step-by-Step)
 
-### Deploying the Frontend (Vercel)
-1. Push your repository to GitHub.
-2. Log in to [Vercel](https://vercel.com) and click **Add New Project**.
-3. Import your GitHub repository.
-4. Set the **Root Directory** to `frontend`.
-5. Add all the `NEXT_PUBLIC_FIREBASE_*` keys in the **Environment Variables** section.
-6. Click **Deploy**.
+### Phase 1: Firebase Setup (Do This First)
+1. Go to [Firebase Console](https://console.firebase.google.com) and create a project ("NER-SENTINEL").
+2. Navigate to **Firestore Database** and create a database (Native mode, e.g., `asia-south1` region).
+3. Go to **Project Settings > General > Your apps > Add web app**.
+4. Copy the `firebaseConfig` object values to your frontend's `.env.local`.
+5. Set **Firestore Security Rules** (development):
+   ```javascript
+   rules_version = '2';
+   service cloud.firestore {
+     match /databases/{database}/documents {
+       match /{document=**} { allow read, write: if true; }
+     }
+   }
+   ```
+*(In production, restrict rules using Firebase Auth.)*
 
-### Deploying the Backend (Render / Railway)
-1. Log in to [Render](https://render.com).
-2. Create a new **Web Service** and link your GitHub repo.
+#### Firestore Collections Schema
+The app automatically creates and manages these collections:
+- `vehicles`: Real-time driver GPS tracking (`lat`, `lng`, `speed`, `status`).
+- `sos_alerts`: Emergency alerts triggered by drivers.
+- `active_routes`: The computed safe route geometries currently being followed.
+- `reroute_events`: History of dynamic rerouting actions due to hazards.
+- `supply_items`: Inventory of critical cargo and priority.
+
+### Phase 2: Backend Deployment (Render.com)
+1. Log in to [Render](https://render.com) and click **New Web Service**.
+2. Connect your GitHub account and select the `NER-SENTINEL` repository.
 3. Set the **Root Directory** to `backend`.
-4. Build Command: `pip install -r requirements.txt`
-5. Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-6. Once deployed, take the Render URL (e.g., `https://your-api.onrender.com`) and update the `NEXT_PUBLIC_API_URL` variable in your Vercel frontend settings. Redeploy Vercel.
+4. Set the **Build Command** to: `pip install -r requirements.txt`
+5. Set the **Start Command** to: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+6. Click **Create Web Service**.
+7. Once deployed, copy the Render URL (e.g., `https://ner-sentinel-api.onrender.com`).
+
+### Phase 3: Frontend Deployment (Vercel)
+1. Log in to [Vercel](https://vercel.com) and click **Add New Project**.
+2. Import the `NER-SENTINEL` GitHub repository.
+3. Set the **Root Directory** to `frontend`.
+4. Open the **Environment Variables** section and add:
+   - `NEXT_PUBLIC_FIREBASE_API_KEY=...`
+   - `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...`
+   - `NEXT_PUBLIC_FIREBASE_PROJECT_ID=...`
+   - `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=...`
+   - `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...`
+   - `NEXT_PUBLIC_FIREBASE_APP_ID=...`
+   - `NEXT_PUBLIC_API_URL=https://ner-sentinel-api.onrender.com` (from Phase 2)
+5. Click **Deploy**.
+
+### Phase 4: Real-Time Connection Verification
+1. Open the deployed Vercel URL in two separate browser windows.
+2. In Window 1: Navigate to the **Command Center** (`/`).
+3. In Window 2: Navigate to the **Driver Portal** (`/driver`).
+4. On the Driver Portal, click **Enable GPS**. You should be prompted for your name.
+5. Watch the truck marker appear live on the Command Center map.
+6. Press the **SOS** button on the Driver Portal — the alert will flash on the Command Center within 1-2 seconds.
 
 ---
 

@@ -2,7 +2,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle } from 'react-
 import L from 'leaflet';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { fetchRoute, checkSegmentHazard, RouteSegment, haversine } from './AIRerouteEngine';
+import { fetchRoute, checkSegmentHazard, RouteSegment, haversine, MAX_REROUTES } from './AIRerouteEngine';
 import { pushRerouteEvent, setActiveRoute, triggerSOS } from '../lib/firebaseRealtimeSync';
 
 if (typeof window !== 'undefined') {
@@ -64,6 +64,8 @@ export default function SimulationMap(props: SimulationMapProps) {
   const [toast, setToast]               = useState<{ type: 'reroute' | 'hazard' | 'sos'; msg: string } | null>(null);
   const [hazardZone, setHazardZone]     = useState<[number, number] | null>(null);
   const [rerouteCount, setRerouteCount] = useState(0);
+  const [currentSpeed, setCurrentSpeed] = useState(0); // km/h
+  const [lookAheadSeg, setLookAheadSeg] = useState<{lat: number, lng: number} | null>(null);
   const simRef = useRef<{ stop: boolean }>({ stop: false });
 
   const showToast = useCallback((type: typeof toast extends null ? never : NonNullable<typeof toast>['type'], msg: string) => {
@@ -108,6 +110,11 @@ export default function SimulationMap(props: SimulationMapProps) {
       const seg = currentRoute[i];
       const prev = i === 0 ? [startLat, startLng] as [number,number] : [currentRoute[i - 1].lat, currentRoute[i - 1].lng] as [number,number];
 
+      // Calculate speed
+      const dist = haversine(prev[0], prev[1], seg.lat, seg.lng);
+      const fakeTimeH = (80 / multiplier * Math.max(8, Math.round(20 / multiplier))) / 3600000;
+      setCurrentSpeed(Math.round(dist / (fakeTimeH || 0.01)));
+
       // Animate truck smoothly across this segment
       await animateSegment(prev, [seg.lat, seg.lng], multiplier, (pos) => {
         setTruckPos(pos);
@@ -124,10 +131,11 @@ export default function SimulationMap(props: SimulationMapProps) {
       // Check hazard on NEXT segment (look-ahead)
       if (i < currentRoute.length - 2) {
         const nextSeg = currentRoute[i + 1];
+        setLookAheadSeg({ lat: nextSeg.lat, lng: nextSeg.lng });
         // Every 3rd segment, do a real hazard check
         if (i % 3 === 0) {
           const hazard = await checkSegmentHazard(nextSeg.lat, nextSeg.lng);
-          if (!hazard.isSafe) {
+          if (!hazard.isSafe && rerouteCount < MAX_REROUTES) {
             setHazardZone([nextSeg.lat, nextSeg.lng]);
             showToast('hazard', `${t('hazardDetected')}: ${hazard.reason}`);
 
@@ -150,15 +158,22 @@ export default function SimulationMap(props: SimulationMapProps) {
 
             // Reset loop to start of new route
             i = -1;
+            setLookAheadSeg(null);
             continue;
+          } else if (!hazard.isSafe && rerouteCount >= MAX_REROUTES) {
+            showToast('hazard', `Max reroutes reached. Cannot avoid hazard: ${hazard.reason}`);
           }
         }
+      } else {
+        setLookAheadSeg(null);
       }
     }
 
     if (!simRef.current.stop) {
       setProgress(100);
       setEtaMin(0);
+      setCurrentSpeed(0);
+      setLookAheadSeg(null);
       setTruckPos([endLat, endLng]);
       showToast('sos', '✅ Delivery complete! Arrived at destination.');
     }
@@ -236,11 +251,12 @@ export default function SimulationMap(props: SimulationMapProps) {
           <div className="mt-4 space-y-1.5">
             <div className="flex justify-between text-xs text-neutral-500">
               <span>{t('simProgress')}: {progress}%</span>
+              <span>Speed: <span className="font-bold text-neutral-800">{currentSpeed} km/h</span></span>
               <span>{t('simEta')}: {etaMin > 0 ? `${etaMin} min` : 'Arrived!'}</span>
             </div>
             <div className="h-2 bg-neutral-100 rounded-full overflow-hidden">
               <div
-                className="h-full bg-red-500 rounded-full transition-all duration-500"
+                className="h-full bg-gradient-to-r from-red-400 to-red-600 rounded-full transition-all duration-500"
                 style={{ width: `${progress}%` }}
               />
             </div>
@@ -339,6 +355,16 @@ export default function SimulationMap(props: SimulationMapProps) {
             center={hazardZone}
             radius={15000}
             pathOptions={{ fillColor: '#DC2626', fillOpacity: 0.25, color: '#DC2626', weight: 2, dashArray: '6 4' }}
+          />
+        )}
+
+        {/* Look-ahead indicator */}
+        {lookAheadSeg && (
+          <Circle
+            center={[lookAheadSeg.lat, lookAheadSeg.lng]}
+            radius={3000}
+            pathOptions={{ fillColor: '#3B82F6', fillOpacity: 0.4, color: '#2563EB', weight: 2 }}
+            className="animate-ping"
           />
         )}
       </MapContainer>

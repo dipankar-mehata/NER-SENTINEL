@@ -11,6 +11,7 @@ import {
   useActiveRoute,
   useRerouteEvents,
   acknowledgeReroute,
+  setDriverStatus,
   RerouteEvent,
 } from '../../lib/firebaseRealtimeSync';
 import type { SimulationMapProps } from '../../components/SimulationMap';
@@ -39,10 +40,6 @@ const NER_CITIES = [
   { name: 'Goalpara',   lat: 26.1736, lng: 90.6235 },
 ];
 
-// ── Driver ID (would come from auth in production) ────────────────
-const DRIVER_ID = 'driver-' + (typeof window !== 'undefined' ? (localStorage.getItem('ner-driver-id') || Math.random().toString(36).slice(2, 8)) : 'demo');
-const DRIVER_NAME = typeof window !== 'undefined' ? (localStorage.getItem('ner-driver-name') || 'Field Driver') : 'Field Driver';
-
 // ── Weather hook ─────────────────────────────────────────────────
 interface WeatherData {
   temp: number;
@@ -60,9 +57,7 @@ async function fetchLocationWeather(lat: number, lng: number): Promise<WeatherDa
     const data = await res.json();
     if (!data.current) return null;
     const wc = data.current.weather_code || 0;
-    const icons: Record<string, string> = {
-      storm: '⛈️', rain: '🌧️', drizzle: '🌦️', fog: '🌫️', clear: '☀️', cloudy: '⛅',
-    };
+    const icons: Record<string, string> = { storm: '⛈️', rain: '🌧️', drizzle: '🌦️', fog: '🌫️', clear: '☀️', cloudy: '⛅' };
     const condition = wc >= 95 ? 'storm' : wc >= 80 ? 'rain' : wc >= 51 ? 'drizzle' : wc >= 45 ? 'fog' : wc >= 3 ? 'cloudy' : 'clear';
     return {
       temp:      data.current.temperature_2m,
@@ -74,9 +69,45 @@ async function fetchLocationWeather(lat: number, lng: number): Promise<WeatherDa
   } catch { return null; }
 }
 
+// ── GPS Signal helper ────────────────────────────────────────────
+function getSignalBars(accuracy: number | null): number {
+  if (accuracy === null) return 0;
+  if (accuracy < 10) return 4;
+  if (accuracy < 30) return 3;
+  if (accuracy < 100) return 2;
+  return 1;
+}
+
 // ── Main Component ────────────────────────────────────────────────
 export default function DriverPortal() {
   const { t } = useTranslation();
+
+  // Driver identity — resolved client-side only
+  const [driverId, setDriverId]     = useState('driver-demo');
+  const [driverName, setDriverName] = useState('Field Driver');
+  const [showNameModal, setShowNameModal] = useState(false);
+  const [nameInput, setNameInput]   = useState('');
+
+  useEffect(() => {
+    const storedId   = localStorage.getItem('ner-driver-id');
+    const storedName = localStorage.getItem('ner-driver-name');
+    const newId = storedId || 'driver-' + Math.random().toString(36).slice(2, 8);
+    if (!storedId) localStorage.setItem('ner-driver-id', newId);
+    setDriverId(newId);
+    if (storedName) {
+      setDriverName(storedName);
+    } else {
+      setShowNameModal(true); // First visit: ask for name
+    }
+  }, []);
+
+  const saveDriverName = useCallback(() => {
+    const name = nameInput.trim() || 'Field Driver';
+    setDriverName(name);
+    localStorage.setItem('ner-driver-name', name);
+    setShowNameModal(false);
+    setDriverStatus(driverId, 'online', { driverName: name });
+  }, [nameInput, driverId]);
 
   // Route selection
   const [originIdx,  setOriginIdx]  = useState(0);
@@ -84,82 +115,137 @@ export default function DriverPortal() {
   const [routeReady, setRouteReady] = useState(false);
 
   // GPS tracking
-  const [gpsTracking,   setGpsTracking]   = useState(false);
-  const [currentPos,    setCurrentPos]    = useState<{ lat: number; lng: number } | null>(null);
-  const trackingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [gpsTracking,    setGpsTracking]    = useState(false);
+  const [currentPos,     setCurrentPos]     = useState<{ lat: number; lng: number } | null>(null);
+  const [gpsAccuracy,    setGpsAccuracy]    = useState<number | null>(null);
+  const [gpsError,       setGpsError]       = useState<string | null>(null);
+  const watchIdRef = useRef<number | null>(null);
 
   // Weather
   const [weather, setWeather] = useState<WeatherData | null>(null);
 
   // SOS
-  const [sosSent, setSosSent]  = useState(false);
-  const [sosMsg,  setSosMsg]   = useState('');
+  const [sosSent, setSosSent] = useState(false);
+  const [sosMsg,  setSosMsg]  = useState('');
 
-  // Firebase listeners
-  const activeRoute    = useActiveRoute(routeReady ? DRIVER_ID : null);
-  const rerouteEvents  = useRerouteEvents(routeReady ? DRIVER_ID : null);
+  // Firebase listeners — only after driverId is resolved
+  const activeRoute   = useActiveRoute(routeReady ? driverId : null);
+  const rerouteEvents = useRerouteEvents(routeReady ? driverId : null);
 
   const origin = NER_CITIES[originIdx];
   const dest   = NER_CITIES[destIdx];
 
-  // ── Fetch weather for current/origin location ─────────────────
+  // Register online/offline status
+  useEffect(() => {
+    if (driverId === 'driver-demo') return;
+    setDriverStatus(driverId, 'online', { driverName });
+    const handleUnload = () => setDriverStatus(driverId, 'offline');
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
+  }, [driverId, driverName]);
+
+  // Weather updates when position changes
   useEffect(() => {
     const loc = currentPos ?? { lat: origin.lat, lng: origin.lng };
     fetchLocationWeather(loc.lat, loc.lng).then(setWeather);
   }, [currentPos, origin.lat, origin.lng]);
 
-  // ── GPS Tracking ─────────────────────────────────────────────
+  // ── GPS watchPosition ─────────────────────────────────────────
   const startTracking = useCallback(() => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      setGpsError('Geolocation not supported by this browser');
+      return;
+    }
     setGpsTracking(true);
-    const update = () => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const { latitude: lat, longitude: lng } = pos.coords;
-          setCurrentPos({ lat, lng });
-          publishVehicleLocation(DRIVER_ID, lat, lng, 0, 0, { driverName: DRIVER_NAME, status: 'en-route' });
-        },
-        () => {
-          // Fallback: simulate location near origin
-          const lat = origin.lat + (Math.random() - 0.5) * 0.02;
-          const lng = origin.lng + (Math.random() - 0.5) * 0.02;
-          setCurrentPos({ lat, lng });
-          publishVehicleLocation(DRIVER_ID, lat, lng, 45, 40, { driverName: DRIVER_NAME, status: 'en-route' });
-        }
-      );
-    };
-    update();
-    trackingIntervalRef.current = setInterval(update, 5000);
-  }, [origin.lat, origin.lng]);
+    setGpsError(null);
+
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+        setCurrentPos({ lat, lng });
+        setGpsAccuracy(accuracy);
+        setGpsError(null);
+        publishVehicleLocation(driverId, lat, lng, 0, 0, {
+          driverName,
+          status: 'en-route',
+          accuracy,
+        });
+      },
+      (err) => {
+        setGpsError(err.message);
+        // Fallback: simulate position near origin
+        const lat = origin.lat + (Math.random() - 0.5) * 0.02;
+        const lng = origin.lng + (Math.random() - 0.5) * 0.02;
+        setCurrentPos({ lat, lng });
+        setGpsAccuracy(500); // mock low accuracy
+        publishVehicleLocation(driverId, lat, lng, 45, 40, { driverName, status: 'en-route' });
+      },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+    );
+  }, [driverId, driverName, origin.lat, origin.lng]);
 
   const stopTracking = useCallback(() => {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
     setGpsTracking(false);
-    if (trackingIntervalRef.current) clearInterval(trackingIntervalRef.current);
-    publishVehicleLocation(DRIVER_ID, origin.lat, origin.lng, 0, 0, { status: 'stopped' });
-  }, [origin.lat, origin.lng]);
+    setGpsAccuracy(null);
+    setDriverStatus(driverId, 'stopped');
+  }, [driverId]);
 
   useEffect(() => {
-    return () => { if (trackingIntervalRef.current) clearInterval(trackingIntervalRef.current); };
+    return () => {
+      if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
+    };
   }, []);
 
   // ── SOS ──────────────────────────────────────────────────────
   const sendSOS = useCallback(async () => {
     const loc = currentPos ?? { lat: origin.lat, lng: origin.lng };
-    await triggerSOS(DRIVER_ID, DRIVER_NAME, loc.lat, loc.lng, sosMsg || 'Emergency! Immediate assistance needed.');
+    await triggerSOS(driverId, driverName, loc.lat, loc.lng, sosMsg || 'Emergency! Immediate assistance needed.');
     setSosSent(true);
     setTimeout(() => setSosSent(false), 5000);
-  }, [currentPos, origin.lat, origin.lng, sosMsg]);
+  }, [currentPos, origin.lat, origin.lng, driverId, driverName, sosMsg]);
 
-  // ── Acknowledge reroute events ────────────────────────────────
   const ackReroute = useCallback(async (id: string) => {
     await acknowledgeReroute(id);
   }, []);
+
+  const signalBars = getSignalBars(gpsAccuracy);
 
   return (
     <>
       <Head>
         <title>{t('driverTitle')} — NER-SENTINEL</title>
+        <meta name="description" content="NER-SENTINEL Driver Portal — GPS tracking, route navigation, SOS" />
       </Head>
+
+      {/* ── Driver Name Modal ─────────────────────────────────── */}
+      {showNameModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm">
+            <div className="w-16 h-16 bg-red-600 rounded-2xl flex items-center justify-center text-3xl mb-4 mx-auto shadow-lg">🚚</div>
+            <h2 className="text-lg font-black text-neutral-900 text-center mb-1">Welcome, Driver</h2>
+            <p className="text-sm text-neutral-500 text-center mb-5">Enter your name so Command Center can identify you on the map</p>
+            <input
+              type="text"
+              value={nameInput}
+              onChange={e => setNameInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && saveDriverName()}
+              placeholder="Your name (e.g. Rajesh Kumar)"
+              className="w-full border border-neutral-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100 mb-4"
+              autoFocus
+            />
+            <button
+              onClick={saveDriverName}
+              className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition-all shadow-sm"
+            >
+              Start Driving 🚀
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="min-h-screen bg-neutral-50 flex flex-col" style={{ fontFamily: 'Satoshi, sans-serif' }}>
         {/* ── Header ─────────────────────────────────────────── */}
@@ -173,10 +259,16 @@ export default function DriverPortal() {
                   <div className="text-[10px] text-neutral-400">{t('driverTitle')}</div>
                 </div>
               </Link>
+              <div className="hidden sm:block text-xs text-neutral-300">|</div>
+              <div className="hidden sm:flex items-center gap-1.5 text-xs text-neutral-600">
+                <div className="w-6 h-6 bg-neutral-100 rounded-full flex items-center justify-center text-sm">👤</div>
+                <span className="font-semibold">{driverName}</span>
+              </div>
             </div>
 
-            {/* GPS pill */}
+            {/* GPS toggle pill */}
             <button
+              id="gps-toggle-btn"
               onClick={gpsTracking ? stopTracking : startTracking}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
                 gpsTracking
@@ -185,7 +277,19 @@ export default function DriverPortal() {
               }`}
             >
               <div className={`w-1.5 h-1.5 rounded-full ${gpsTracking ? 'bg-green-500 animate-pulse' : 'bg-neutral-400'}`} />
-              {gpsTracking ? t('trackingActive') : t('gpsTracking')}
+              {gpsTracking ? '📡 Live GPS' : '📍 Enable GPS'}
+              {/* Signal bars */}
+              {gpsTracking && (
+                <div className="flex items-end gap-0.5 ml-1">
+                  {[1,2,3,4].map(bar => (
+                    <div
+                      key={bar}
+                      className={`w-1 rounded-sm ${bar <= signalBars ? 'bg-green-500' : 'bg-green-200'}`}
+                      style={{ height: `${bar * 3}px` }}
+                    />
+                  ))}
+                </div>
+              )}
             </button>
 
             <LanguageSwitcher compact />
@@ -224,9 +328,7 @@ export default function DriverPortal() {
                     onChange={e => { setOriginIdx(+e.target.value); setRouteReady(false); }}
                     className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
                   >
-                    {NER_CITIES.map((c, i) => (
-                      <option key={c.name} value={i}>{c.name}</option>
-                    ))}
+                    {NER_CITIES.map((c, i) => <option key={c.name} value={i}>{c.name}</option>)}
                   </select>
                 </div>
                 <div>
@@ -236,13 +338,12 @@ export default function DriverPortal() {
                     onChange={e => { setDestIdx(+e.target.value); setRouteReady(false); }}
                     className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
                   >
-                    {NER_CITIES.map((c, i) => (
-                      <option key={c.name} value={i} disabled={i === originIdx}>{c.name}</option>
-                    ))}
+                    {NER_CITIES.map((c, i) => <option key={c.name} value={i} disabled={i === originIdx}>{c.name}</option>)}
                   </select>
                 </div>
               </div>
               <button
+                id="get-route-btn"
                 onClick={() => { if (originIdx !== destIdx) setRouteReady(true); }}
                 disabled={originIdx === destIdx}
                 className="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-sm transition-all shadow-sm disabled:opacity-50"
@@ -253,9 +354,7 @@ export default function DriverPortal() {
               {/* Active Firebase route info */}
               {activeRoute && (
                 <div className="mt-3 flex flex-wrap gap-3 text-xs">
-                  <span className="bg-neutral-100 px-2 py-1 rounded-lg text-neutral-600">
-                    ⏱️ ~{activeRoute.estimatedTimeMin} min
-                  </span>
+                  <span className="bg-neutral-100 px-2 py-1 rounded-lg text-neutral-600">⏱️ ~{activeRoute.estimatedTimeMin} min</span>
                   <span className={`px-2 py-1 rounded-lg font-semibold ${
                     activeRoute.totalRiskScore > 0.6 ? 'bg-red-100 text-red-700' :
                     activeRoute.totalRiskScore > 0.3 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
@@ -284,25 +383,31 @@ export default function DriverPortal() {
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-xs">
-                    <WeatherStat icon="💧" label={t('humidity')} value={`${weather.rain.toFixed(1)} mm`} />
-                    <WeatherStat icon="💨" label={t('windSpeed')} value={`${weather.windSpeed.toFixed(0)} km/h`} />
+                    <div className="bg-neutral-50 rounded-lg p-2">
+                      <div className="text-neutral-400">💧 {t('humidity')}</div>
+                      <div className="font-bold text-neutral-700">{weather.rain.toFixed(1)} mm</div>
+                    </div>
+                    <div className="bg-neutral-50 rounded-lg p-2">
+                      <div className="text-neutral-400">💨 {t('windSpeed')}</div>
+                      <div className="font-bold text-neutral-700">{weather.windSpeed.toFixed(0)} km/h</div>
+                    </div>
                   </div>
                   {weather.condition === 'storm' && (
                     <div className="bg-red-50 border border-red-200 rounded-lg p-2 text-xs text-red-700 font-medium">
-                      ⚠️ Severe weather — exercise caution
+                      ⚠️ Severe weather — exercise extreme caution
                     </div>
                   )}
                   {weather.condition === 'rain' && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-xs text-blue-700 font-medium">
-                      🌧️ Rain expected — reduce speed
+                      🌧️ Rain — reduce speed, watch for landslides
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="flex items-center justify-center h-20 text-neutral-400 text-sm">{t('loading')}</div>
+                <div className="flex items-center justify-center h-20 text-neutral-400 text-sm animate-pulse">{t('loading')}</div>
               )}
               <div className="mt-3 text-[10px] text-neutral-300">
-                📍 {currentPos ? `${currentPos.lat.toFixed(3)}, ${currentPos.lng.toFixed(3)}` : `${origin.name}`} · Open-Meteo
+                📍 {currentPos ? `${currentPos.lat.toFixed(4)}, ${currentPos.lng.toFixed(4)}` : origin.name} · Open-Meteo
               </div>
             </div>
           </div>
@@ -311,9 +416,7 @@ export default function DriverPortal() {
           <div className="grid sm:grid-cols-2 gap-4">
             {/* SOS Panel */}
             <div className="bg-white rounded-2xl border-2 border-red-100 shadow-sm p-4">
-              <h2 className="font-bold text-neutral-900 mb-3 flex items-center gap-2">
-                <span>🚨</span> Emergency SOS
-              </h2>
+              <h2 className="font-bold text-neutral-900 mb-3 flex items-center gap-2"><span>🚨</span> Emergency SOS</h2>
               <input
                 type="text"
                 value={sosMsg}
@@ -322,40 +425,59 @@ export default function DriverPortal() {
                 className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm mb-3 focus:outline-none focus:border-red-400"
               />
               <button
+                id="sos-btn"
                 onClick={sendSOS}
                 disabled={sosSent}
                 className={`w-full py-3 font-black text-sm rounded-xl transition-all shadow-sm ${
-                  sosSent
-                    ? 'bg-green-500 text-white'
-                    : 'bg-red-600 hover:bg-red-700 active:scale-95 text-white animate-sos-pulse'
+                  sosSent ? 'bg-green-500 text-white' : 'bg-red-600 hover:bg-red-700 active:scale-95 text-white'
                 }`}
               >
                 {sosSent ? `✅ ${t('sosSent')}` : `🚨 ${t('sosButton')}`}
               </button>
             </div>
 
-            {/* GPS status */}
+            {/* GPS Status Panel */}
             <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm p-4">
-              <h2 className="font-bold text-neutral-900 mb-3 flex items-center gap-2">
-                <span>📍</span> {t('gpsTracking')}
-              </h2>
+              <h2 className="font-bold text-neutral-900 mb-3 flex items-center gap-2"><span>📍</span> {t('gpsTracking')}</h2>
               <div className={`flex items-center gap-3 p-3 rounded-xl mb-3 ${gpsTracking ? 'bg-green-50 border border-green-200' : 'bg-neutral-50 border border-neutral-100'}`}>
-                <div className={`w-3 h-3 rounded-full ${gpsTracking ? 'bg-green-500 animate-pulse' : 'bg-neutral-300'}`} />
-                <div>
+                <div className={`w-3 h-3 rounded-full flex-shrink-0 ${gpsTracking ? 'bg-green-500 animate-pulse' : 'bg-neutral-300'}`} />
+                <div className="flex-1 min-w-0">
                   <div className={`text-sm font-semibold ${gpsTracking ? 'text-green-700' : 'text-neutral-500'}`}>
                     {gpsTracking ? t('trackingActive') : t('trackingOff')}
                   </div>
                   {currentPos && (
-                    <div className="text-xs text-neutral-400 font-mono mt-0.5">
+                    <div className="text-xs text-neutral-400 font-mono mt-0.5 truncate">
                       {currentPos.lat.toFixed(5)}, {currentPos.lng.toFixed(5)}
                     </div>
                   )}
+                  {gpsAccuracy !== null && (
+                    <div className="text-[10px] text-neutral-400 mt-0.5">
+                      Accuracy: ±{gpsAccuracy < 1000 ? gpsAccuracy.toFixed(0) + 'm' : (gpsAccuracy / 1000).toFixed(1) + 'km'}
+                    </div>
+                  )}
                 </div>
+                {/* Signal bars */}
+                {gpsTracking && (
+                  <div className="flex items-end gap-0.5">
+                    {[1,2,3,4].map(bar => (
+                      <div
+                        key={bar}
+                        className={`w-1.5 rounded-sm ${bar <= signalBars ? 'bg-green-500' : 'bg-neutral-200'}`}
+                        style={{ height: `${bar * 4}px` }}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
+              {gpsError && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 text-xs text-yellow-700 mb-2">
+                  ⚠️ GPS fallback: {gpsError}
+                </div>
+              )}
               <div className="text-xs text-neutral-500 bg-neutral-50 rounded-lg p-2">
                 {gpsTracking
-                  ? '🔴 Publishing location to Command Center every 5 seconds via Firebase'
-                  : '💡 Enable GPS to share your position with the Command Center in real-time'}
+                  ? '🔴 Publishing live location to Command Center via Firebase'
+                  : '💡 Enable GPS to share your position with Command Center in real-time'}
               </div>
             </div>
           </div>
@@ -365,13 +487,11 @@ export default function DriverPortal() {
             <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm p-4">
               <h2 className="font-bold text-neutral-900 mb-3 flex items-center gap-2">
                 <span className="text-red-600">🎮</span> AI Route & Simulation
-                <span className="ml-2 text-xs font-normal text-neutral-400">
-                  {origin.name} → {dest.name}
-                </span>
+                <span className="ml-2 text-xs font-normal text-neutral-400">{origin.name} → {dest.name}</span>
               </h2>
               <SimulationMap
-                vehicleId={DRIVER_ID}
-                driverName={DRIVER_NAME}
+                vehicleId={driverId}
+                driverName={driverName}
                 startLat={currentPos?.lat ?? origin.lat}
                 startLng={currentPos?.lng ?? origin.lng}
                 startLabel={origin.name}
@@ -383,20 +503,14 @@ export default function DriverPortal() {
           ) : (
             <div className="bg-white rounded-2xl border-2 border-dashed border-neutral-200 p-8 text-center text-neutral-400">
               <div className="text-4xl mb-3">🗺️</div>
-              <div className="font-medium text-neutral-500">Select an origin and destination, then click <span className="text-red-600 font-bold">Get AI Route</span> to load the simulation map</div>
+              <div className="font-medium text-neutral-500">
+                Select an origin and destination, then click <span className="text-red-600 font-bold">Get AI Route</span> to load the simulation map
+              </div>
+              <div className="text-xs text-neutral-400 mt-2">Routes use real roads via OSRM when available</div>
             </div>
           )}
         </main>
       </div>
     </>
-  );
-}
-
-function WeatherStat({ icon, label, value }: { icon: string; label: string; value: string }) {
-  return (
-    <div className="bg-neutral-50 rounded-lg p-2">
-      <div className="text-neutral-400">{icon} {label}</div>
-      <div className="font-bold text-neutral-700">{value}</div>
-    </div>
   );
 }
