@@ -72,6 +72,8 @@ interface RoadSegment {
   blocked: boolean;
 }
 
+import MapplsMap from './MapplsMap';
+
 export default function LiveMap() {
   if (typeof window === 'undefined') return null;
 
@@ -79,6 +81,7 @@ export default function LiveMap() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [segments, setSegments] = useState<RoadSegment[]>([]);
   const [lastUpdated, setLastUpdated] = useState<string>('');
+  const [mapProvider, setMapProvider] = useState<'mappls' | 'osm'>('mappls');
 
   const fetchAll = async () => {
     try {
@@ -124,10 +127,47 @@ export default function LiveMap() {
   }
 
   return (
-    <div style={{ height: '75vh', width: '100%', borderRadius: '12px', overflow: 'hidden', border: '1px solid #374151' }}>
-      <div className="absolute top-2 right-2 z-[1000] bg-gray-900 text-gray-300 text-xs px-3 py-1 rounded-full border border-gray-700">
-        🔄 Updated: {lastUpdated}
+    <div style={{ height: '75vh', width: '100%', borderRadius: '12px', overflow: 'hidden', border: '1px solid #374151', position: 'relative' }}>
+      {/* Top Map Toolbar */}
+      <div className="absolute top-2 left-2 z-[1000] flex items-center gap-2 bg-gray-900/95 backdrop-blur border border-gray-700 p-1 rounded-lg text-xs shadow-lg">
+        <button
+          onClick={() => setMapProvider('mappls')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-semibold transition-all ${
+            mapProvider === 'mappls'
+              ? 'bg-orange-600 text-white shadow-md'
+              : 'text-gray-400 hover:text-white hover:bg-gray-800'
+          }`}
+        >
+          <span>🇮🇳</span>
+          <span>Mappls Map</span>
+          <span className="text-[9px] bg-black/30 px-1.5 py-0.5 rounded text-orange-200">Key Active</span>
+        </button>
+        <button
+          onClick={() => setMapProvider('osm')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-semibold transition-all ${
+            mapProvider === 'osm'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'text-gray-400 hover:text-white hover:bg-gray-800'
+          }`}
+        >
+          <span>🌐</span>
+          <span>OpenStreetMap</span>
+        </button>
       </div>
+
+      <div className="absolute top-2 right-2 z-[1000] bg-gray-900/95 backdrop-blur text-gray-300 text-xs px-3 py-1.5 rounded-lg border border-gray-700 shadow-md flex items-center gap-2">
+        <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+        <span>Updated: {lastUpdated}</span>
+      </div>
+
+      {mapProvider === 'mappls' ? (
+        <MapplsMap
+          vehicles={vehicles}
+          incidents={incidents}
+          segments={segments}
+          onFallback={() => setMapProvider('osm')}
+        />
+      ) : (
       <MapContainer
         center={[26.0, 92.0]}
         zoom={7}
@@ -261,6 +301,7 @@ export default function LiveMap() {
           );
         })}
       </MapContainer>
+      )}
     </div>
   );
 }

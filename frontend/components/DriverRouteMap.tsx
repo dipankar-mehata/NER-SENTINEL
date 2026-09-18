@@ -115,6 +115,9 @@ function MapBoundsUpdater({ bounds }: { bounds: Coordinate[] }) {
   return null;
 }
 
+import { useState } from 'react';
+import MapplsDriverMap from './MapplsDriverMap';
+
 export default function DriverRouteMap({
   startLat,
   startLng,
@@ -126,6 +129,8 @@ export default function DriverRouteMap({
   endLabel,
 }: DriverRouteMapProps) {
   if (typeof window === 'undefined') return null;
+
+  const [mapProvider, setMapProvider] = useState<'mappls' | 'osm'>('mappls');
 
   const validStartLat = !isNaN(startLat) ? startLat : 26.14;
   const validStartLng = !isNaN(startLng) ? startLng : 91.73;
@@ -169,8 +174,51 @@ export default function DriverRouteMap({
         borderRadius: '12px',
         overflow: 'hidden',
         border: '1px solid #374151',
+        position: 'relative',
       }}
     >
+      {/* Provider Switcher */}
+      <div className="absolute top-2 left-2 z-[1000] flex items-center gap-2 bg-gray-900/95 backdrop-blur border border-gray-700 p-1 rounded-lg text-xs shadow-lg">
+        <button
+          onClick={() => setMapProvider('mappls')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-semibold transition-all ${
+            mapProvider === 'mappls'
+              ? 'bg-orange-600 text-white shadow-md'
+              : 'text-gray-400 hover:text-white hover:bg-gray-800'
+          }`}
+        >
+          <span>🇮🇳</span>
+          <span>Mappls Map</span>
+          <span className="text-[9px] bg-black/30 px-1.5 py-0.5 rounded text-orange-200">Active</span>
+        </button>
+        <button
+          onClick={() => setMapProvider('osm')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-semibold transition-all ${
+            mapProvider === 'osm'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'text-gray-400 hover:text-white hover:bg-gray-800'
+          }`}
+        >
+          <span>🌐</span>
+          <span>OpenStreetMap</span>
+        </button>
+      </div>
+
+      {mapProvider === 'mappls' ? (
+        <MapplsDriverMap
+          startLat={validStartLat}
+          startLng={validStartLng}
+          endLat={validEndLat}
+          endLng={validEndLng}
+          startLabel={startLabel}
+          endLabel={endLabel}
+          routeAPositions={finalA}
+          routeBPositions={finalB}
+          routeARisk={routeA?.total_risk}
+          routeBRisk={routeB?.total_risk}
+          onFallback={() => setMapProvider('osm')}
+        />
+      ) : (
       <MapContainer
         center={[centerLat, centerLng]}
         zoom={8}
@@ -255,6 +303,7 @@ export default function DriverRouteMap({
           </Popup>
         </Marker>
       </MapContainer>
+      )}
     </div>
   );
 }
