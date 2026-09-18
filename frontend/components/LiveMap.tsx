@@ -140,7 +140,7 @@ export default function LiveMap() {
         >
           <span>🇮🇳</span>
           <span>Mappls Map</span>
-          <span className="text-[9px] bg-black/30 px-1.5 py-0.5 rounded text-orange-200">Key Active</span>
+          <span className="text-[9px] bg-black/30 px-1.5 py-0.5 rounded text-orange-200">National Map</span>
         </button>
         <button
           onClick={() => setMapProvider('osm')}

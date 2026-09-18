@@ -408,54 +408,58 @@ class LogisticsRouter:
 
             route_candidates = [route_a_res, route_b_res]
 
-        # Determine Route A (Shortest) and Route B (Safest)
+        # Determine Route A (Shortest/Direct) and Route B (Safest Alternative)
         sorted_by_dist = sorted(route_candidates, key=lambda x: x["distance_km"])
         route_a = sorted_by_dist[0]
-        route_a["label"] = "Route A (Shortest)"
+        route_a["label"] = "Route A (Direct / Shortest)"
 
-        sorted_by_risk = sorted(route_candidates, key=lambda x: x["total_risk"])
-        route_b = sorted_by_risk[0]
+        # Route B is selected from candidates with lower risk, or alternative path
+        remaining_candidates = [r for r in route_candidates if r != route_a]
+        if remaining_candidates:
+            sorted_by_risk = sorted(remaining_candidates, key=lambda x: x["total_risk"])
+            route_b = sorted_by_risk[0]
+        else:
+            route_b = route_a
 
-        if route_b["distance_km"] == route_a["distance_km"] and len(route_candidates) > 1:
-            route_b = route_candidates[1]
-
-        route_b["label"] = "Route B (Safest Alternative)"
-
-        if route_b["total_risk"] > route_a["total_risk"]:
-            route_a, route_b = route_b, route_a
-            route_a["label"] = "Route A (Shortest)"
-            route_b["label"] = "Route B (Safest Alternative)"
+        route_b["label"] = "Route B (Alternative / Detour)"
 
         time_diff = route_b["time_min"] - route_a["time_min"]
         risk_diff = route_a["total_risk"] - route_b["total_risk"]
 
         corridor_info = f" along {route_a['corridors'][0]}" if route_a["corridors"] else ""
-        if route_a["total_risk"] >= 60 and route_b["total_risk"] < 60:
-            recommendation = "Route B (Safest Alternative) is strongly recommended"
+
+        # Consistent decision engine:
+        # Route B is recommended ONLY when Route A has higher hazard risk and Route B is meaningfully safer
+        if route_a["total_risk"] >= 50 and route_b["total_risk"] < route_a["total_risk"]:
+            recommended_route = "Route B"
+            recommendation = "Route B (Safest Alternative) is recommended"
             reason = (
-                f"Route A passes through an active high-risk hazard zone{corridor_info} "
-                f"(Risk {route_a['total_risk']}/100 🔴). Route B avoids the hazardous road corridor "
-                f"via an alternative highway (Risk {route_b['total_risk']}/100 🟢). "
+                f"Route A passes through an active hazard zone{corridor_info} "
+                f"(Risk {route_a['total_risk']}/100 🔴). Route B avoids hazardous corridors "
+                f"via a safer alternative (Risk {route_b['total_risk']}/100 🟢). "
                 f"Estimated additional travel time: {max(5, abs(time_diff))} minutes."
             )
         elif risk_diff > 15:
+            recommended_route = "Route B"
             recommendation = "Route B is recommended for critical shipments"
             reason = (
-                f"Route B reduces exposure to weather and landslide hazards by {risk_diff} risk points "
+                f"Route B reduces hazard exposure by {risk_diff} risk points "
                 f"(Risk {route_b['total_risk']} vs {route_a['total_risk']}) "
-                f"with a minimal detour of {max(5, time_diff)} mins."
+                f"with an estimated {max(5, time_diff)} min detour."
             )
         else:
-            recommendation = "Route A (Direct) is feasible"
+            recommended_route = "Route A"
+            recommendation = "Route A (Direct) is recommended"
             reason = (
-                f"Current corridor conditions are stable (Risk: {route_a['total_risk']}/100). "
-                f"Route A provides the fastest travel time ({route_a['time_min']} mins)."
+                f"Direct corridor conditions are safe and stable (Risk: {route_a['total_risk']}/100 🟢). "
+                f"Route A provides the fastest travel time ({route_a['time_min']} mins, {route_a['distance_km']} km)."
             )
 
         return {
             "route_a": route_a,
             "route_b": route_b,
             "comparison": {
+                "recommended_route": recommended_route,
                 "recommendation": recommendation,
                 "reason": reason,
                 "time_diff_min": time_diff,

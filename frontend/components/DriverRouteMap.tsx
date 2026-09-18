@@ -56,6 +56,7 @@ interface DriverRouteMapProps {
   routeB: RouteData | null;
   startLabel: string;
   endLabel: string;
+  isRouteBRecommended?: boolean;
 }
 
 function parsePoint(pt: unknown): Coordinate | null {
@@ -127,6 +128,7 @@ export default function DriverRouteMap({
   routeB,
   startLabel,
   endLabel,
+  isRouteBRecommended = false,
 }: DriverRouteMapProps) {
   if (typeof window === 'undefined') return null;
 
@@ -216,6 +218,7 @@ export default function DriverRouteMap({
           routeBPositions={finalB}
           routeARisk={routeA?.total_risk}
           routeBRisk={routeB?.total_risk}
+          isRouteBRecommended={isRouteBRecommended}
           onFallback={() => setMapProvider('osm')}
         />
       ) : (
@@ -230,22 +233,24 @@ export default function DriverRouteMap({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         />
 
-        {/* Route A — Red Dashed (Shortest) */}
+        {/* Route A (Direct / Shortest) */}
         {finalA.length >= 2 && (
           <Polyline
             positions={finalA}
             pathOptions={{
-              color: '#ef4444',
-              weight: 5,
-              dashArray: '8,6',
-              opacity: 0.85,
+              color: !isRouteBRecommended ? '#22c55e' : '#ef4444',
+              weight: !isRouteBRecommended ? 6 : 5,
+              dashArray: isRouteBRecommended ? '8,6' : undefined,
+              opacity: !isRouteBRecommended ? 0.95 : 0.85,
             }}
           >
             <Popup>
               <div className="text-xs text-gray-900">
-                <strong className="text-red-600">Route A (Shortest)</strong>
+                <strong className={!isRouteBRecommended ? 'text-green-600' : 'text-red-600'}>
+                  Route A (Direct / Shortest) {!isRouteBRecommended ? '— Recommended ✅' : ''}
+                </strong>
                 <br />
-                Risk Score: {routeA?.total_risk ?? '82'}/100 🔴
+                Risk Score: {routeA?.total_risk ?? '35'}/100 {!isRouteBRecommended ? '🟢' : '🔴'}
                 <br />
                 ETA: {routeA ? `${Math.floor(routeA.time_min / 60)}h ${routeA.time_min % 60}m` : '4h 10m'}
               </div>
@@ -253,25 +258,25 @@ export default function DriverRouteMap({
           </Polyline>
         )}
 
-        {/* Route B — Green Solid (Recommended Safest) */}
+        {/* Route B (Alternative Detour) */}
         {finalB.length >= 2 && (
           <Polyline
             positions={finalB}
             pathOptions={{
-              color: '#22c55e',
-              weight: 6,
-              opacity: 0.9,
+              color: isRouteBRecommended ? '#22c55e' : '#3b82f6',
+              weight: isRouteBRecommended ? 6 : 4,
+              opacity: isRouteBRecommended ? 0.95 : 0.75,
             }}
           >
             <Popup>
               <div className="text-xs text-gray-900">
-                <strong className="text-green-600">Route B (Recommended ✅)</strong>
+                <strong className={isRouteBRecommended ? 'text-green-600' : 'text-blue-600'}>
+                  Route B (Alternative) {isRouteBRecommended ? '— Recommended ✅' : ''}
+                </strong>
                 <br />
                 Risk Score: {routeB?.total_risk ?? '28'}/100 🟢
                 <br />
                 ETA: {routeB ? `${Math.floor(routeB.time_min / 60)}h ${routeB.time_min % 60}m` : '4h 45m'}
-                <br />
-                <span className="text-gray-500 italic">Avoids active landslide corridor</span>
               </div>
             </Popup>
           </Polyline>

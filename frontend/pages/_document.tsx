@@ -33,9 +33,11 @@ export default function Document() {
         />
 
         {/* Mappls Web Map SDK */}
-        <script
-          src={`https://sdk.mappls.com/map/sdk/web?v=3.0&access_token=${process.env.NEXT_PUBLIC_MAPPLS_KEY || 'idcbzgnknzuqlwhektvbhzgiksexnptuzhpj'}`}
-        />
+        {process.env.NEXT_PUBLIC_MAPPLS_KEY && (
+          <script
+            src={`https://sdk.mappls.com/map/sdk/web?v=3.0&access_token=${process.env.NEXT_PUBLIC_MAPPLS_KEY}`}
+          />
+        )}
 
         {/* Service Worker Registration */}
         <script

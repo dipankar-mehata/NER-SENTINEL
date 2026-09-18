@@ -2,14 +2,13 @@ import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import AICopilot from '../../components/AICopilot';
 import DisasterSim from '../../components/DisasterSim';
 import WhatIfSimulator from '../../components/WhatIfSimulator';
 import RiskForecast from '../../components/RiskForecast';
 
 const LiveMap = dynamic(() => import('../../components/LiveMap'), { ssr: false });
 
-type Tab = 'map' | 'ai' | 'sim' | 'whatif' | 'forecast';
+type Tab = 'map' | 'sim' | 'whatif' | 'forecast';
 
 interface Stats {
   vehicles: number;
@@ -20,7 +19,6 @@ interface Stats {
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'map', label: 'Live Map', icon: '🗺️' },
-  { id: 'ai', label: 'AI Copilot', icon: '🤖' },
   { id: 'sim', label: 'Disaster Sim', icon: '🎮' },
   { id: 'whatif', label: 'What-If', icon: '⚡' },
   { id: 'forecast', label: '24h Forecast', icon: '🔮' },
@@ -155,12 +153,6 @@ export default function AdminPage() {
                 <span className="text-xs text-gray-600">Auto-refreshes every 15s</span>
               </div>
               <LiveMap />
-            </div>
-          )}
-
-          {activeTab === 'ai' && (
-            <div style={{ height: 'calc(100vh - 180px)' }}>
-              <AICopilot />
             </div>
           )}
 

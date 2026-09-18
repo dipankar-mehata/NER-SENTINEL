@@ -39,16 +39,6 @@ const ROLES = [
     badgeColor: 'bg-orange-900 text-orange-300',
   },
   {
-    emoji: '📱',
-    title: 'Field Officer',
-    description: 'Mobile incident reporting with offline support, GPS capture, and voice notes.',
-    href: '/field',
-    color: 'from-green-600 to-green-800',
-    border: 'border-green-700 hover:border-green-400',
-    badge: 'FIELD',
-    badgeColor: 'bg-green-900 text-green-300',
-  },
-  {
     emoji: '🚚',
     title: 'Driver Portal',
     description: 'Live route navigation, hazard alerts, route comparison, and GPS location sharing.',
@@ -142,7 +132,7 @@ export default function Home() {
           </div>
 
           {/* Role Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 max-w-7xl w-full">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl w-full">
             {ROLES.map((role) => (
               <Link
                 key={role.href}

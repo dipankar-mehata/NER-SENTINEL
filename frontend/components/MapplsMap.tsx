@@ -62,19 +62,33 @@ export default function MapplsMap({ vehicles, incidents, segments, onFallback }:
   // 1. Ensure Mappls Web SDK is loaded
   useEffect(() => {
     let checkTimer: any;
-    let attempts = 0;
-    const maxAttempts = 30; // 15 seconds max
 
     const checkMappls = () => {
       if (typeof window !== 'undefined' && (window as any).mappls && (window as any).mappls.Map) {
         setSdkReady(true);
       } else {
-        attempts++;
-        if (attempts >= maxAttempts) {
-          setInitError('Mappls SDK timed out loading.');
-          if (onFallback) onFallback();
+        const existing = document.getElementById('mappls-sdk-script');
+        if (!existing && typeof document !== 'undefined') {
+          const key = process.env.NEXT_PUBLIC_MAPPLS_KEY || '';
+          if (!key) {
+            setInitError('Mappls API key not configured.');
+            if (onFallback) onFallback();
+            return;
+          }
+          const script = document.createElement('script');
+          script.id = 'mappls-sdk-script';
+          script.src = `https://sdk.mappls.com/map/sdk/web?v=3.0&access_token=${key}`;
+          script.async = true;
+          script.onload = () => {
+            setTimeout(() => setSdkReady(true), 300);
+          };
+          script.onerror = () => {
+            setInitError('Failed to load Mappls Maps SDK.');
+            if (onFallback) onFallback();
+          };
+          document.head.appendChild(script);
         } else {
-          checkTimer = setTimeout(checkMappls, 500);
+          checkTimer = setTimeout(checkMappls, 400);
         }
       }
     };
@@ -285,7 +299,7 @@ export default function MapplsMap({ vehicles, incidents, segments, onFallback }:
       <div className="flex flex-col items-center justify-center h-full bg-gray-900 text-gray-400 gap-3">
         <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
         <p className="text-xs font-medium">Connecting to Mappls Map Engine...</p>
-        <span className="text-[10px] text-gray-500">Key: idcbzgnknzuqlwhektvbhzgiksexnptuzhpj</span>
+        <span className="text-[10px] text-orange-400/80">India National GIS Layer Active</span>
       </div>
     );
   }

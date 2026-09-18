@@ -35,7 +35,13 @@ interface RouteData {
 interface RouteComparison {
   route_a: RouteData;
   route_b: RouteData;
-  comparison: { recommendation: string; reason: string };
+  comparison: {
+    recommendation: string;
+    reason: string;
+    recommended_route?: string;
+    time_diff_min?: number;
+    risk_diff?: number;
+  };
 }
 
 interface Incident {
@@ -151,6 +157,14 @@ export default function DriverPage() {
     return 'bg-green-900/60 text-green-300 border-green-700';
   };
 
+  const isRouteBRecommended = Boolean(
+    routeData?.comparison?.recommended_route === 'Route B' ||
+    routeData?.comparison?.recommendation?.toLowerCase().includes('route b') ||
+    (routeData && routeData.route_a.total_risk >= 50 && routeData.route_b.total_risk < routeData.route_a.total_risk)
+  );
+
+  const recommendedRoute = routeData ? (isRouteBRecommended ? routeData.route_b : routeData.route_a) : null;
+
   return (
     <>
       <Head>
@@ -170,10 +184,12 @@ export default function DriverPage() {
                 <span className="text-red-400">💊 Critical Medicine</span>
                 <span className="text-gray-500 mx-2">|</span>
                 <span className="text-gray-300">{origin.name} → {destination.name}</span>
-                {routeData?.route_b && (
+                {recommendedRoute && (
                   <>
                     <span className="text-gray-500 mx-2">|</span>
-                    <span className="text-blue-400">ETA: {formatTime(routeData.route_b.time_min)}</span>
+                    <span className="text-blue-400 font-semibold">
+                      ETA: {formatTime(recommendedRoute.time_min)} ({isRouteBRecommended ? 'Route B' : 'Route A'})
+                    </span>
                   </>
                 )}
               </div>
@@ -256,13 +272,19 @@ export default function DriverPage() {
               {routeData && !loadingRoute && (
                 <>
                   {/* Route A */}
-                  <div className="bg-red-900/20 border border-red-800 rounded-xl p-4">
+                  <div className={`border rounded-xl p-4 transition-all ${
+                    !isRouteBRecommended ? 'bg-green-900/20 border-green-700 ring-1 ring-green-600' : 'bg-red-900/20 border-red-800'
+                  }`}>
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <div className="w-4 h-1 bg-red-500 rounded" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #ef4444 0px, #ef4444 6px, transparent 6px, transparent 10px)' }} />
+                        <div className="w-4 h-1 rounded" style={{ backgroundColor: !isRouteBRecommended ? '#22c55e' : '#ef4444' }} />
                         <span className="text-white font-bold">Route A</span>
                       </div>
-                      <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded">SHORTEST</span>
+                      {!isRouteBRecommended ? (
+                        <span className="text-xs bg-green-900 text-green-300 border border-green-700 px-2 py-0.5 rounded font-bold">✓ RECOMMENDED</span>
+                      ) : (
+                        <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded">DIRECT / SHORTEST</span>
+                      )}
                     </div>
                     <div className="flex justify-between items-center text-sm">
                       <span className="text-gray-300">
@@ -276,13 +298,19 @@ export default function DriverPage() {
                   </div>
 
                   {/* Route B */}
-                  <div className="bg-green-900/20 border border-green-700 rounded-xl p-4">
+                  <div className={`border rounded-xl p-4 transition-all ${
+                    isRouteBRecommended ? 'bg-green-900/20 border-green-700 ring-1 ring-green-600' : 'bg-gray-900 border-gray-700'
+                  }`}>
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <div className="w-4 h-1 bg-green-500 rounded" />
+                        <div className="w-4 h-1 rounded" style={{ backgroundColor: isRouteBRecommended ? '#22c55e' : '#3b82f6' }} />
                         <span className="text-white font-bold">Route B</span>
                       </div>
-                      <span className="text-xs bg-green-900 text-green-300 border border-green-700 px-2 py-0.5 rounded">✓ RECOMMENDED</span>
+                      {isRouteBRecommended ? (
+                        <span className="text-xs bg-green-900 text-green-300 border border-green-700 px-2 py-0.5 rounded font-bold">✓ RECOMMENDED</span>
+                      ) : (
+                        <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded">ALTERNATIVE DETOUR</span>
+                      )}
                     </div>
                     <div className="flex justify-between items-center text-sm">
                       <span className="text-gray-300">
@@ -338,9 +366,15 @@ export default function DriverPage() {
 
             {/* Map */}
             <div className="lg:col-span-2">
-              <div className="mb-2 flex items-center gap-3 text-xs text-gray-500">
-                <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-red-500" style={{ backgroundImage: 'repeating-linear-gradient(90deg,#ef4444 0,#ef4444 4px,transparent 4px,transparent 7px)' }} /> Route A (Shortest)</span>
-                <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-green-500" /> Route B (Recommended)</span>
+              <div className="mb-2 flex items-center gap-3 text-xs text-gray-400">
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-4 h-1 rounded" style={{ backgroundColor: !isRouteBRecommended ? '#22c55e' : '#ef4444' }} />
+                  Route A {!isRouteBRecommended ? '(Recommended ✅)' : '(Shortest)'}
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-4 h-1 rounded" style={{ backgroundColor: isRouteBRecommended ? '#22c55e' : '#3b82f6' }} />
+                  Route B {isRouteBRecommended ? '(Recommended ✅)' : '(Alternative)'}
+                </span>
               </div>
               <DriverRouteMap
                 startLat={origin.lat}
@@ -351,6 +385,7 @@ export default function DriverPage() {
                 routeB={routeData?.route_b ?? null}
                 startLabel={origin.name}
                 endLabel={destination.name}
+                isRouteBRecommended={isRouteBRecommended}
               />
             </div>
           </div>
