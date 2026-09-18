@@ -7,7 +7,6 @@ from sqlalchemy import (
     Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Text
 )
 from sqlalchemy.orm import declarative_base, relationship
-from geoalchemy2 import Geometry
 from datetime import datetime
 
 Base = declarative_base()
@@ -22,7 +21,8 @@ class Vehicle(Base):
     status = Column(String, default="IDLE")          # EN_ROUTE / DELAYED / IDLE / COMPLETED
     payload_type = Column(String, nullable=False)
     priority = Column(String, default="Normal")      # Critical / High / Medium / Normal
-    location = Column(Geometry("POINT", srid=4326))
+    lat = Column(Float, default=0.0)
+    lng = Column(Float, default=0.0)
 
     destination_name = Column(String, default="")
     destination_lat = Column(Float, default=0.0)
@@ -49,7 +49,8 @@ class Incident(Base):
 
     severity = Column(Integer, default=1)
     verified = Column(Boolean, default=False)
-    location = Column(Geometry("POINT", srid=4326))
+    lat = Column(Float, default=0.0)
+    lng = Column(Float, default=0.0)
 
     description = Column(Text, default="")
     photo_url = Column(String, default="")
@@ -70,7 +71,8 @@ class Warehouse(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     district = Column(String, nullable=False)
-    location = Column(Geometry("POINT", srid=4326))
+    lat = Column(Float, default=0.0)
+    lng = Column(Float, default=0.0)
 
     medicine_stock_pct = Column(Float, default=100.0)
     food_stock_pct = Column(Float, default=100.0)

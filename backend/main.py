@@ -53,16 +53,6 @@ router_engine = LogisticsRouter()
 # Helper: serialise geometry to lat/lng
 # ---------------------------------------------------------------------------
 
-def _geo_to_latlon(db: Session, geom) -> dict:
-    """Convert a GeoAlchemy2 geometry column value to {"lat": ..., "lng": ...}."""
-    try:
-        geo_json = db.scalar(func.ST_AsGeoJSON(geom))
-        if geo_json is None:
-            return {"lat": 0.0, "lng": 0.0}
-        coords = json.loads(geo_json)["coordinates"]
-        return {"lat": coords[1], "lng": coords[0]}
-    except Exception:
-        return {"lat": 0.0, "lng": 0.0}
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +66,7 @@ def _seed_vehicles(db: Session):
             "status": "EN_ROUTE",
             "payload_type": "Critical Medicine",
             "priority": "Critical",
-            "location": "SRID=4326;POINT(91.73 26.14)",
+            "lng": 91.73, "lat": 26.14,
             "destination_name": "Tezpur District Hospital",
             "destination_lat": 26.65,
             "destination_lng": 92.79,
@@ -92,7 +82,7 @@ def _seed_vehicles(db: Session):
             "status": "DELAYED",
             "payload_type": "Food Supplies",
             "priority": "High",
-            "location": "SRID=4326;POINT(91.88 25.57)",
+            "lng": 91.88, "lat": 25.57,
             "destination_name": "Silchar Relief Camp",
             "destination_lat": 24.83,
             "destination_lng": 92.78,
@@ -108,7 +98,7 @@ def _seed_vehicles(db: Session):
             "status": "IDLE",
             "payload_type": "Fuel & Generator",
             "priority": "Medium",
-            "location": "SRID=4326;POINT(92.79 26.65)",
+            "lng": 92.79, "lat": 26.65,
             "destination_name": "Bomdila Forward Base",
             "destination_lat": 27.26,
             "destination_lng": 92.41,
@@ -124,7 +114,7 @@ def _seed_vehicles(db: Session):
             "status": "EN_ROUTE",
             "payload_type": "Emergency Equipment",
             "priority": "Critical",
-            "location": "SRID=4326;POINT(93.94 24.82)",
+            "lng": 93.94, "lat": 24.82,
             "destination_name": "Kohima Emergency Center",
             "destination_lat": 25.67,
             "destination_lng": 94.11,
@@ -140,7 +130,7 @@ def _seed_vehicles(db: Session):
             "status": "COMPLETED",
             "payload_type": "Medical Kits",
             "priority": "Normal",
-            "location": "SRID=4326;POINT(92.78 24.83)",
+            "lng": 92.78, "lat": 24.83,
             "destination_name": "Silchar District Hospital",
             "destination_lat": 24.83,
             "destination_lng": 92.78,
@@ -163,7 +153,7 @@ def _seed_warehouses(db: Session):
         {
             "name": "Guwahati Central Hub",
             "district": "Kamrup Metropolitan",
-            "location": "SRID=4326;POINT(91.73 26.14)",
+            "lng": 91.73, "lat": 26.14,
             "medicine_stock_pct": 72.0,
             "food_stock_pct": 85.0,
             "fuel_stock_pct": 91.0,
@@ -172,7 +162,7 @@ def _seed_warehouses(db: Session):
         {
             "name": "Shillong Regional Depot",
             "district": "East Khasi Hills",
-            "location": "SRID=4326;POINT(91.88 25.58)",
+            "lng": 91.88, "lat": 25.58,
             "medicine_stock_pct": 31.0,   # below threshold → triggers shortage warning
             "food_stock_pct": 45.0,
             "fuel_stock_pct": 22.0,       # critical shortage
@@ -181,7 +171,7 @@ def _seed_warehouses(db: Session):
         {
             "name": "Tezpur Forward Base",
             "district": "Sonitpur",
-            "location": "SRID=4326;POINT(92.79 26.65)",
+            "lng": 92.79, "lat": 26.65,
             "medicine_stock_pct": 55.0,
             "food_stock_pct": 38.0,       # below threshold
             "fuel_stock_pct": 60.0,
@@ -456,7 +446,7 @@ def _seed_incidents(db: Session):
             "incident_type": "LANDSLIDE",
             "severity": 5,
             "verified": True,
-            "location": "SRID=4326;POINT(92.50 26.40)",
+            "lng": 92.50, "lat": 26.40,
             "description": "Major landslide blocking NH15 near Bhalukpong. "
                            "Full road closure — heavy equipment required.",
             "source": "FIELD_OFFICER",
@@ -467,7 +457,7 @@ def _seed_incidents(db: Session):
             "incident_type": "FLOOD",
             "severity": 4,
             "verified": True,
-            "location": "SRID=4326;POINT(91.90 24.90)",
+            "lng": 91.90, "lat": 24.90,
             "description": "Barak River flooding — water on NH6 (Silchar approach). "
                            "1.5m water level. Vehicles > 4t advised to halt.",
             "source": "AI",
@@ -478,7 +468,7 @@ def _seed_incidents(db: Session):
             "incident_type": "ROAD_DAMAGE",
             "severity": 3,
             "verified": False,
-            "location": "SRID=4326;POINT(94.00 25.20)",
+            "lng": 94.00, "lat": 25.20,
             "description": "Reported pothole crater on Imphal-Kohima stretch. "
                            "Slows traffic significantly.",
             "source": "DRIVER",
@@ -587,7 +577,7 @@ def get_vehicles(db: Session = Depends(database.get_db)):
     results = db.query(models.Vehicle).all()
     out = []
     for v in results:
-        loc = _geo_to_latlon(db, v.location)
+        loc = {"lat": v.lat, "lng": v.lng}
         out.append({
             "id": v.id,
             "driver_name": v.driver_name,
@@ -620,7 +610,8 @@ def update_vehicle_location(
     if not vehicle:
         raise HTTPException(status_code=404, detail=f"Vehicle {vehicle_id} not found")
 
-    vehicle.location = f"SRID=4326;POINT({update.lng} {update.lat})"
+    vehicle.lat = update.lat
+    vehicle.lng = update.lng
     if update.status is not None:
         vehicle.status = update.status
     if update.speed_kmh is not None:
@@ -642,7 +633,7 @@ def get_incidents(db: Session = Depends(database.get_db)):
     ).all()
     out = []
     for r in results:
-        loc = _geo_to_latlon(db, r.location)
+        loc = {"lat": r.lat, "lng": r.lng}
         out.append({
             "id": r.id,
             "incident_type": r.incident_type,
@@ -666,7 +657,7 @@ def create_incident(incident: IncidentCreate, db: Session = Depends(database.get
     new_incident = models.Incident(
         incident_type=incident.incident_type,
         severity=incident.severity,
-        location=f"SRID=4326;POINT({incident.lng} {incident.lat})",
+        lat=incident.lat, lng=incident.lng,
         verified=False,
         description=incident.description,
         source=incident.source,
@@ -792,7 +783,7 @@ def calculate_route(req: RouteRequest, db: Session = Depends(database.get_db)):
     results = db.query(models.Incident).all()
     incidents = []
     for r in results:
-        loc = _geo_to_latlon(db, r.location)
+        loc = {"lat": r.lat, "lng": r.lng}
         incidents.append({
             "lat": loc["lat"],
             "lng": loc["lng"],
@@ -1221,7 +1212,7 @@ def broadcast_sos(payload: SOSBroadcastRequest, db: Session = Depends(database.g
             confidence_pct=98,
             description=f"[EMERGENCY SOS - {payload.driver_name}] {payload.description or 'Immediate distress broadcast reported by driver.'}",
             source="DRIVER_SOS",
-            location=func.ST_SetSRID(func.ST_MakePoint(payload.lng, payload.lat), 4326),
+            lat=payload.lat, lng=payload.lng,
             created_at=datetime.utcnow(),
         )
         db.add(new_incident)
