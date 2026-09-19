@@ -43,7 +43,7 @@ export default function SOSPanel() {
 
   return (
     <div className="space-y-3">
-      {alerts.map(alert => (
+      {alerts.filter(alert => typeof alert.lat === 'number' && typeof alert.lng === 'number').map(alert => (
         <div
           key={alert.id}
           className={`relative bg-white rounded-2xl border-2 shadow-md p-4 animate-slide-in ${

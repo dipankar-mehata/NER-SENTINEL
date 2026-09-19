@@ -281,7 +281,7 @@ export default function CommandMap({ vehicles, sosAlerts }: { vehicles: Firebase
         ))}
 
         {/* SOS Alert markers */}
-        {sosAlerts.map(alert => (
+        {sosAlerts.filter(alert => typeof alert.lat === 'number' && typeof alert.lng === 'number').map(alert => (
           <Marker key={alert.id} position={[alert.lat, alert.lng]} icon={makeSOSIcon()}>
             <Popup>
               <div className="text-sm">
