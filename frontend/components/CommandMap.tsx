@@ -127,10 +127,11 @@ function weatherBorderColor(w: WeatherPoint): string {
 function MapFitBounds({ vehicles }: { vehicles: FirebaseVehicle[] }) {
   const map = useMap();
   useEffect(() => {
-    if (vehicles.length > 0) {
-      const bounds = L.latLngBounds(vehicles.map(v => [v.lat, v.lng] as [number, number]));
-      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 10 });
-    }
+      const validVehicles = vehicles.filter(v => typeof v.lat === 'number' && typeof v.lng === 'number');
+      if (validVehicles.length > 0) {
+        const bounds = L.latLngBounds(validVehicles.map(v => [v.lat, v.lng] as [number, number]));
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 10 });
+      }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vehicles.length]);
   return null;
@@ -263,7 +264,7 @@ export default function CommandMap({ vehicles, sosAlerts }: { vehicles: Firebase
         ))}
 
         {/* Disaster markers */}
-        {layers.disasters && disasters.map(d => (
+        {layers.disasters && disasters.filter(d => typeof d.lat === 'number' && typeof d.lng === 'number').map(d => (
           <Circle
             key={d.id}
             center={[d.lat, d.lng]}
@@ -294,7 +295,7 @@ export default function CommandMap({ vehicles, sosAlerts }: { vehicles: Firebase
         ))}
 
         {/* Vehicle markers */}
-        {layers.vehicles && displayVehicles.map(v => (
+        {layers.vehicles && displayVehicles.filter(v => typeof v.lat === 'number' && typeof v.lng === 'number').map(v => (
           <Marker key={v.id} position={[v.lat, v.lng]} icon={makeVehicleIcon(v.priority)}>
             <Popup>
               <div className="text-sm min-w-[200px]">
